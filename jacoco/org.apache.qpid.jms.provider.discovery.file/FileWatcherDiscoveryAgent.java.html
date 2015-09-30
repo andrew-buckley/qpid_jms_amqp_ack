@@ -1,0 +1,263 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>FileWatcherDiscoveryAgent.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Discovery Library</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.discovery.file</a> &gt; <span class="el_source">FileWatcherDiscoveryAgent.java</span></div><h1>FileWatcherDiscoveryAgent.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.discovery.file;
+
+import java.io.BufferedReader;
+import java.io.FileReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.StringTokenizer;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.apache.qpid.jms.util.URISupport;
+import org.apache.qpid.jms.provider.discovery.DiscoveryAgent;
+import org.apache.qpid.jms.provider.discovery.DiscoveryListener;
+import org.apache.qpid.jms.util.ThreadPoolUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Discovery agent that watches a file and periodically reads in remote URIs
+ * from that file.
+ */
+public class FileWatcherDiscoveryAgent implements DiscoveryAgent {
+
+<span class="nc" id="L50">    private static final Logger LOG = LoggerFactory.getLogger(FileWatcherDiscoveryAgent.class);</span>
+
+    private static final int DEFAULT_UPDATE_INTERVAL = 30000;
+
+    private ScheduledExecutorService scheduler;
+<span class="nc" id="L55">    private final Set&lt;URI&gt; discovered = new LinkedHashSet&lt;URI&gt;();</span>
+
+    private final URI discoveryURI;
+<span class="nc" id="L58">    private final AtomicBoolean started = new AtomicBoolean(false);</span>
+
+    private DiscoveryListener listener;
+<span class="nc" id="L61">    private int updateInterval = DEFAULT_UPDATE_INTERVAL;</span>
+    private boolean warnOnWatchedReadError;
+
+<span class="nc" id="L64">    public FileWatcherDiscoveryAgent(URI discoveryURI) throws URISyntaxException {</span>
+<span class="nc" id="L65">        this.discoveryURI = URISupport.removeQuery(discoveryURI);</span>
+<span class="nc" id="L66">    }</span>
+
+    @Override
+    public void setDiscoveryListener(DiscoveryListener listener) {
+<span class="nc" id="L70">        this.listener = listener;</span>
+<span class="nc" id="L71">    }</span>
+
+    public DiscoveryListener getDiscoveryListener() {
+<span class="nc" id="L74">        return this.listener;</span>
+    }
+
+    @Override
+    public boolean isSchedulerRequired() {
+<span class="nc" id="L79">        return true;</span>
+    }
+
+    @Override
+    public void setScheduler(ScheduledExecutorService scheduler) {
+<span class="nc" id="L84">        this.scheduler = scheduler;</span>
+<span class="nc" id="L85">    }</span>
+
+    @Override
+    public void start() throws IOException, IllegalStateException {
+<span class="nc bnc" id="L89" title="All 2 branches missed.">        if (listener == null) {</span>
+<span class="nc" id="L90">            throw new IllegalStateException(&quot;No DiscoveryListener configured.&quot;);</span>
+        }
+
+<span class="nc bnc" id="L93" title="All 2 branches missed.">        if (scheduler == null) {</span>
+<span class="nc" id="L94">            throw new IllegalStateException(&quot;No scheduler service has been provided.&quot;);</span>
+        }
+
+<span class="nc bnc" id="L97" title="All 2 branches missed.">        if (started.compareAndSet(false, true)) {</span>
+<span class="nc" id="L98">            scheduler.scheduleAtFixedRate(new Runnable() {</span>
+
+                @Override
+                public void run() {
+<span class="nc" id="L102">                    LOG.debug(&quot;Performing watched resources scheduled update: {}&quot;, getDiscvoeryURI());</span>
+<span class="nc" id="L103">                    updateWatchedResources();</span>
+<span class="nc" id="L104">                }</span>
+            }, 0, getUpdateInterval(), TimeUnit.MILLISECONDS);
+        }
+<span class="nc" id="L107">    }</span>
+
+    @Override
+    public void close() {
+<span class="nc bnc" id="L111" title="All 2 branches missed.">        if (started.compareAndSet(true, false)) {</span>
+<span class="nc" id="L112">            ThreadPoolUtils.shutdownGraceful(scheduler);</span>
+        }
+<span class="nc" id="L114">    }</span>
+
+    @Override
+    public void suspend() {
+        // We don't suspend watching the file updates are passive.
+<span class="nc" id="L119">    }</span>
+
+    @Override
+    public void resume() {
+        // We don't suspend watching the file updates are passive.
+<span class="nc" id="L124">    }</span>
+
+    @Override
+    public String toString() {
+<span class="nc" id="L128">        return &quot;FileWatcherDiscoveryAgent: listener:&quot; + getDiscvoeryURI();</span>
+    }
+
+    // ---------- Property Accessors ------------------------------------------//
+
+    /**
+     * @return the original URI used to create the Discovery Agent.
+     */
+    public URI getDiscvoeryURI() {
+<span class="nc" id="L137">        return this.discoveryURI;</span>
+    }
+
+    /**
+     * @return the configured resource update interval.
+     */
+    public int getUpdateInterval() {
+<span class="nc" id="L144">        return updateInterval;</span>
+    }
+
+    /**
+     * @param updateInterval
+     *        the update interval to use for watching resources for changes.
+     */
+    public void setUpdateInterval(int updateInterval) {
+<span class="nc" id="L152">        this.updateInterval = updateInterval;</span>
+<span class="nc" id="L153">    }</span>
+
+    //----- Internal implementation ------------------------------------------//
+
+    private void updateWatchedResources() {
+<span class="nc" id="L158">        String fileURL = getDiscvoeryURI().toString();</span>
+<span class="nc bnc" id="L159" title="All 2 branches missed.">        if (fileURL != null) {</span>
+<span class="nc" id="L160">            BufferedReader in = null;</span>
+<span class="nc" id="L161">            String newUris = null;</span>
+<span class="nc" id="L162">            StringBuffer buffer = new StringBuffer();</span>
+
+            try {
+<span class="nc" id="L165">                in = new BufferedReader(getURLStream(fileURL));</span>
+                while (true) {
+<span class="nc" id="L167">                    String line = in.readLine();</span>
+<span class="nc bnc" id="L168" title="All 2 branches missed.">                    if (line == null) {</span>
+<span class="nc" id="L169">                        break;</span>
+                    }
+<span class="nc" id="L171">                    buffer.append(line);</span>
+<span class="nc" id="L172">                }</span>
+<span class="nc" id="L173">                newUris = buffer.toString();</span>
+<span class="nc" id="L174">            } catch (IOException ioe) {</span>
+<span class="nc bnc" id="L175" title="All 2 branches missed.">                if (!warnOnWatchedReadError) {</span>
+<span class="nc" id="L176">                    LOG.warn(&quot;Failed to read watched resource: &quot; + fileURL);</span>
+<span class="nc" id="L177">                    LOG.trace(&quot;Resource read error:&quot;, ioe);</span>
+                } else {
+<span class="nc" id="L179">                    LOG.debug(&quot;Failed to read watched resource: &quot; + fileURL);</span>
+<span class="nc" id="L180">                    LOG.trace(&quot;Resource read error:&quot;, ioe);</span>
+                }
+            } finally {
+<span class="nc bnc" id="L183" title="All 6 branches missed.">                if (in != null) {</span>
+                    try {
+<span class="nc" id="L185">                        in.close();</span>
+<span class="nc" id="L186">                    } catch (IOException ioe) {</span>
+                        // ignore
+<span class="nc" id="L188">                    }</span>
+                }
+            }
+
+<span class="nc" id="L192">            processURIs(newUris);</span>
+        }
+<span class="nc" id="L194">    }</span>
+
+    private InputStreamReader getURLStream(String path) throws IOException {
+<span class="nc" id="L197">        InputStreamReader result = null;</span>
+<span class="nc" id="L198">        URL url = null;</span>
+
+        try {
+<span class="nc" id="L201">            url = new URL(path);</span>
+<span class="nc" id="L202">            result = new InputStreamReader(url.openStream());</span>
+<span class="nc" id="L203">        } catch (MalformedURLException e) {</span>
+            // ignore - it could be a path to a a local file
+<span class="nc" id="L205">        }</span>
+
+<span class="nc bnc" id="L207" title="All 2 branches missed.">        if (result == null) {</span>
+<span class="nc" id="L208">            result = new FileReader(path);</span>
+        }
+
+<span class="nc" id="L211">        return result;</span>
+    }
+
+    private final void processURIs(String updatedURIs) {
+<span class="nc bnc" id="L215" title="All 2 branches missed.">        if (updatedURIs != null) {</span>
+<span class="nc" id="L216">            updatedURIs = updatedURIs.trim();</span>
+<span class="nc bnc" id="L217" title="All 2 branches missed.">            if (!updatedURIs.isEmpty()) {</span>
+<span class="nc" id="L218">                List&lt;URI&gt; list = new ArrayList&lt;URI&gt;();</span>
+<span class="nc" id="L219">                StringTokenizer tokenizer = new StringTokenizer(updatedURIs, &quot;,&quot;);</span>
+<span class="nc bnc" id="L220" title="All 2 branches missed.">                while (tokenizer.hasMoreTokens()) {</span>
+<span class="nc" id="L221">                    String str = tokenizer.nextToken();</span>
+                    try {
+<span class="nc" id="L223">                        URI uri = new URI(str);</span>
+<span class="nc" id="L224">                        list.add(uri);</span>
+<span class="nc" id="L225">                    } catch (Exception e) {</span>
+<span class="nc" id="L226">                        LOG.error(&quot;Failed to parse broker address: &quot; + str, e);</span>
+<span class="nc" id="L227">                    }</span>
+<span class="nc" id="L228">                }</span>
+<span class="nc bnc" id="L229" title="All 2 branches missed.">                if (list.isEmpty() == false) {</span>
+                    try {
+<span class="nc" id="L231">                        updateURIs(list);</span>
+<span class="nc" id="L232">                    } catch (IOException e) {</span>
+<span class="nc" id="L233">                        LOG.error(&quot;Failed to update transport URI's from: &quot; + updatedURIs, e);</span>
+<span class="nc" id="L234">                    }</span>
+                }
+            }
+        }
+<span class="nc" id="L238">    }</span>
+
+    private void updateURIs(List&lt;URI&gt; updates) throws IOException {
+
+        // Remove any previously discovered URIs that are no longer in the watched resource
+<span class="nc" id="L243">        HashSet&lt;URI&gt; removedPeers = new HashSet&lt;URI&gt;(discovered);</span>
+<span class="nc" id="L244">        removedPeers.removeAll(updates);</span>
+
+<span class="nc bnc" id="L246" title="All 2 branches missed.">        for (URI removed : removedPeers) {</span>
+<span class="nc" id="L247">            listener.onServiceRemove(removed);</span>
+<span class="nc" id="L248">        }</span>
+
+        // Only add the newly discovered remote peers
+<span class="nc" id="L251">        HashSet&lt;URI&gt; addedPeers = new HashSet&lt;URI&gt;(updates);</span>
+<span class="nc" id="L252">        addedPeers.removeAll(discovered);</span>
+
+<span class="nc bnc" id="L254" title="All 2 branches missed.">        for (URI addition : addedPeers) {</span>
+<span class="nc" id="L255">            listener.onServiceAdd(addition);</span>
+<span class="nc" id="L256">        }</span>
+
+        // Now just store the new set of URIs and advertise them.
+<span class="nc" id="L259">        discovered.clear();</span>
+<span class="nc" id="L260">        discovered.addAll(updates);</span>
+<span class="nc" id="L261">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>
