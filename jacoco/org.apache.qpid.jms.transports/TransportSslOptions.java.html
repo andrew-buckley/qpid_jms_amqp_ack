@@ -1,0 +1,289 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TransportSslOptions.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.transports</a> &gt; <span class="el_source">TransportSslOptions.java</span></div><h1>TransportSslOptions.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.transports;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+
+
+/**
+ * Holds the defined SSL options for connections that operate over a secure
+ * transport.  Options are read from the environment and can be overridden by
+ * specifying them on the connection URI.
+ */
+<span class="fc" id="L29">public class TransportSslOptions extends TransportOptions {</span>
+
+    public static final String DEFAULT_STORE_TYPE = &quot;jks&quot;;
+    public static final String DEFAULT_CONTEXT_PROTOCOL = &quot;TLS&quot;;
+    public static final boolean DEFAULT_TRUST_ALL = false;
+    public static final boolean DEFAULT_VERIFY_HOST = true;
+<span class="fc" id="L35">    public static final List&lt;String&gt; DEFAULT_DISABLED_PROTOCOLS = Collections.unmodifiableList(Arrays.asList(new String[]{&quot;SSLv2Hello&quot;, &quot;SSLv3&quot;}));</span>
+    public static final int DEFAULT_SSL_PORT = 5671;
+
+<span class="fc" id="L38">    public static final TransportSslOptions INSTANCE = new TransportSslOptions();</span>
+
+    private String keyStoreLocation;
+    private String keyStorePassword;
+    private String trustStoreLocation;
+    private String trustStorePassword;
+<span class="fc" id="L44">    private String storeType = DEFAULT_STORE_TYPE;</span>
+    private String[] enabledCipherSuites;
+    private String[] disabledCipherSuites;
+    private String[] enabledProtocols;
+<span class="fc" id="L48">    private String[] disabledProtocols = DEFAULT_DISABLED_PROTOCOLS.toArray(new String[0]);</span>
+<span class="fc" id="L49">    private String contextProtocol = DEFAULT_CONTEXT_PROTOCOL;</span>
+
+<span class="fc" id="L51">    private boolean trustAll = DEFAULT_TRUST_ALL;</span>
+<span class="fc" id="L52">    private boolean verifyHost = DEFAULT_VERIFY_HOST;</span>
+    private String keyAlias;
+<span class="fc" id="L54">    private int defaultSslPort = DEFAULT_SSL_PORT;</span>
+
+    static {
+<span class="fc" id="L57">        INSTANCE.setKeyStoreLocation(System.getProperty(&quot;javax.net.ssl.keyStore&quot;));</span>
+<span class="fc" id="L58">        INSTANCE.setKeyStorePassword(System.getProperty(&quot;javax.net.ssl.keyStorePassword&quot;));</span>
+<span class="fc" id="L59">        INSTANCE.setTrustStoreLocation(System.getProperty(&quot;javax.net.ssl.trustStore&quot;));</span>
+<span class="fc" id="L60">        INSTANCE.setTrustStorePassword(System.getProperty(&quot;javax.net.ssl.keyStorePassword&quot;));</span>
+<span class="fc" id="L61">    }</span>
+
+    /**
+     * @return the keyStoreLocation currently configured.
+     */
+    public String getKeyStoreLocation() {
+<span class="fc" id="L67">        return keyStoreLocation;</span>
+    }
+
+    /**
+     * Sets the location on disk of the key store to use.
+     *
+     * @param keyStoreLocation
+     *        the keyStoreLocation to use to create the key manager.
+     */
+    public void setKeyStoreLocation(String keyStoreLocation) {
+<span class="fc" id="L77">        this.keyStoreLocation = keyStoreLocation;</span>
+<span class="fc" id="L78">    }</span>
+
+    /**
+     * @return the keyStorePassword
+     */
+    public String getKeyStorePassword() {
+<span class="fc" id="L84">        return keyStorePassword;</span>
+    }
+
+    /**
+     * @param keyStorePassword the keyStorePassword to set
+     */
+    public void setKeyStorePassword(String keyStorePassword) {
+<span class="fc" id="L91">        this.keyStorePassword = keyStorePassword;</span>
+<span class="fc" id="L92">    }</span>
+
+    /**
+     * @return the trustStoreLocation
+     */
+    public String getTrustStoreLocation() {
+<span class="fc" id="L98">        return trustStoreLocation;</span>
+    }
+
+    /**
+     * @param trustStoreLocation the trustStoreLocation to set
+     */
+    public void setTrustStoreLocation(String trustStoreLocation) {
+<span class="fc" id="L105">        this.trustStoreLocation = trustStoreLocation;</span>
+<span class="fc" id="L106">    }</span>
+
+    /**
+     * @return the trustStorePassword
+     */
+    public String getTrustStorePassword() {
+<span class="fc" id="L112">        return trustStorePassword;</span>
+    }
+
+    /**
+     * @param trustStorePassword the trustStorePassword to set
+     */
+    public void setTrustStorePassword(String trustStorePassword) {
+<span class="fc" id="L119">        this.trustStorePassword = trustStorePassword;</span>
+<span class="fc" id="L120">    }</span>
+
+    /**
+     * @return the storeType
+     */
+    public String getStoreType() {
+<span class="fc" id="L126">        return storeType;</span>
+    }
+
+    /**
+     * @param storeType
+     *        the format that the store files are encoded in.
+     */
+    public void setStoreType(String storeType) {
+<span class="fc" id="L134">        this.storeType = storeType;</span>
+<span class="fc" id="L135">    }</span>
+
+    /**
+     * @return the enabledCipherSuites
+     */
+    public String[] getEnabledCipherSuites() {
+<span class="fc" id="L141">        return enabledCipherSuites;</span>
+    }
+
+    /**
+     * @param enabledCipherSuites the enabledCipherSuites to set
+     */
+    public void setEnabledCipherSuites(String[] enabledCipherSuites) {
+<span class="fc" id="L148">        this.enabledCipherSuites = enabledCipherSuites;</span>
+<span class="fc" id="L149">    }</span>
+
+    /**
+     * @return the disabledCipherSuites
+     */
+    public String[] getDisabledCipherSuites() {
+<span class="fc" id="L155">        return disabledCipherSuites;</span>
+    }
+
+    /**
+     * @param disabledCipherSuites the disabledCipherSuites to set
+     */
+    public void setDisabledCipherSuites(String[] disabledCipherSuites) {
+<span class="fc" id="L162">        this.disabledCipherSuites = disabledCipherSuites;</span>
+<span class="fc" id="L163">    }</span>
+
+    /**
+     * @return the enabledProtocols or null if the defaults should be used
+     */
+    public String[] getEnabledProtocols() {
+<span class="fc" id="L169">        return enabledProtocols;</span>
+    }
+
+    /**
+     * The protocols to be set as enabled.
+     *
+     * @param enabledProtocols the enabled protocols to set, or null if the defaults should be used.
+     */
+    public void setEnabledProtocols(String[] enabledProtocols) {
+<span class="fc" id="L178">        this.enabledProtocols = enabledProtocols;</span>
+<span class="fc" id="L179">    }</span>
+
+    /**
+     *
+     * @return the protocols to disable or null if none should be
+     */
+    public String[] getDisabledProtocols() {
+<span class="fc" id="L186">        return disabledProtocols;</span>
+    }
+
+    /**
+     * The protocols to be disable.
+     *
+     * @param disabledProtocols the protocols to disable, or null if none should be.
+     */
+    public void setDisabledProtocols(String[] disabledProtocols) {
+<span class="fc" id="L195">        this.disabledProtocols = disabledProtocols;</span>
+<span class="fc" id="L196">    }</span>
+
+    /**
+    * @return the context protocol to use
+    */
+    public String getContextProtocol() {
+<span class="fc" id="L202">        return contextProtocol;</span>
+    }
+
+    /**
+     * The protocol value to use when creating an SSLContext via
+     * SSLContext.getInstance(protocol).
+     *
+     * @param contextProtocol the context protocol to use.
+     */
+    public void setContextProtocol(String contextProtocol) {
+<span class="fc" id="L212">        this.contextProtocol = contextProtocol;</span>
+<span class="fc" id="L213">    }</span>
+
+    /**
+     * @return the trustAll
+     */
+    public boolean isTrustAll() {
+<span class="fc" id="L219">        return trustAll;</span>
+    }
+
+    /**
+     * @param trustAll the trustAll to set
+     */
+    public void setTrustAll(boolean trustAll) {
+<span class="fc" id="L226">        this.trustAll = trustAll;</span>
+<span class="fc" id="L227">    }</span>
+
+    /**
+     * @return the verifyHost
+     */
+    public boolean isVerifyHost() {
+<span class="fc" id="L233">        return verifyHost;</span>
+    }
+
+    /**
+     * @param verifyHost the verifyHost to set
+     */
+    public void setVerifyHost(boolean verifyHost) {
+<span class="fc" id="L240">        this.verifyHost = verifyHost;</span>
+<span class="fc" id="L241">    }</span>
+
+    /**
+     * @return the key alias
+     */
+    public String getKeyAlias() {
+<span class="fc" id="L247">        return keyAlias;</span>
+    }
+
+    /**
+     * @param keyAlias the key alias to use
+     */
+    public void setKeyAlias(String keyAlias) {
+<span class="fc" id="L254">        this.keyAlias = keyAlias;</span>
+<span class="fc" id="L255">    }</span>
+
+    public int getDefaultSslPort() {
+<span class="nc" id="L258">        return defaultSslPort;</span>
+    }
+
+    public void setDefaultSslPort(int defaultSslPort) {
+<span class="nc" id="L262">        this.defaultSslPort = defaultSslPort;</span>
+<span class="nc" id="L263">    }</span>
+
+    @Override
+    public TransportSslOptions clone() {
+<span class="fc" id="L267">        return copyOptions(new TransportSslOptions());</span>
+    }
+
+    protected TransportSslOptions copyOptions(TransportSslOptions copy) {
+<span class="fc" id="L271">        super.copyOptions(copy);</span>
+
+<span class="fc" id="L273">        copy.setKeyStoreLocation(getKeyStoreLocation());</span>
+<span class="fc" id="L274">        copy.setKeyStorePassword(getKeyStorePassword());</span>
+<span class="fc" id="L275">        copy.setTrustStoreLocation(getTrustStoreLocation());</span>
+<span class="fc" id="L276">        copy.setTrustStorePassword(getTrustStorePassword());</span>
+<span class="fc" id="L277">        copy.setStoreType(getStoreType());</span>
+<span class="fc" id="L278">        copy.setEnabledCipherSuites(getEnabledCipherSuites());</span>
+<span class="fc" id="L279">        copy.setDisabledCipherSuites(getDisabledCipherSuites());</span>
+<span class="fc" id="L280">        copy.setEnabledProtocols(getEnabledProtocols());</span>
+<span class="fc" id="L281">        copy.setDisabledProtocols(getDisabledProtocols());</span>
+<span class="fc" id="L282">        copy.setTrustAll(isTrustAll());</span>
+<span class="fc" id="L283">        copy.setVerifyHost(isVerifyHost());</span>
+<span class="fc" id="L284">        copy.setKeyAlias(getKeyAlias());</span>
+<span class="fc" id="L285">        copy.setContextProtocol(getContextProtocol());</span>
+<span class="fc" id="L286">        return copy;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,655 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>JmsMessagePropertyIntercepter.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.message</a> &gt; <span class="el_source">JmsMessagePropertyIntercepter.java</span></div><h1>JmsMessagePropertyIntercepter.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.message;
+
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMSX_DELIVERY_COUNT;
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMSX_GROUPID;
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMSX_GROUPSEQ;
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMSX_USERID;
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMS_CORRELATIONID;
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMS_DELIVERY_MODE;
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMS_DESTINATION;
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMS_EXPIRATION;
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMS_MESSAGEID;
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMS_PRIORITY;
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMS_REDELIVERED;
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMS_REPLYTO;
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMS_TIMESTAMP;
+import static org.apache.qpid.jms.message.JmsMessageSupport.JMS_TYPE;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+
+import javax.jms.DeliveryMode;
+import javax.jms.Destination;
+import javax.jms.JMSException;
+import javax.jms.Message;
+
+import org.apache.qpid.jms.exceptions.JmsExceptionSupport;
+import org.apache.qpid.jms.message.facade.JmsMessageFacade;
+import org.apache.qpid.jms.util.TypeConversionSupport;
+
+/**
+ * Utility class used to intercept calls to Message property gets and sets and map the
+ * correct fields in the underlying JmsMessageFacade to the property name being operated on.
+ */
+<span class="fc" id="L53">public class JmsMessagePropertyIntercepter {</span>
+
+<span class="fc" id="L55">    private static final Map&lt;String, PropertyIntercepter&gt; PROPERTY_INTERCEPTERS =</span>
+        new HashMap&lt;String, PropertyIntercepter&gt;();
+<span class="fc" id="L57">    private static final Set&lt;String&gt; STANDARD_HEADERS = new HashSet&lt;String&gt;();</span>
+
+    /**
+     * Interface for a Property intercepter object used to write JMS style
+     * properties that are part of the JMS Message object members or perform
+     * some needed conversion action before some named property is read or
+     * written.  If a property is not writable then the intercepter should
+     * throw an JMSException to indicate the error.
+     */
+<span class="fc" id="L66">    interface PropertyIntercepter {</span>
+
+        /**
+         * Called when the names property is queried from an JMS Message object.
+         *
+         * @param message
+         *        The message being acted upon.
+         *
+         * @return the correct property value from the given Message.
+         *
+         * @throws JMSException if an error occurs while accessing the property
+         */
+        Object getProperty(JmsMessageFacade message) throws JMSException;
+
+        /**
+         * Called when the names property is assigned from an JMS Message object.
+         *
+         * @param message
+         *        The message instance being acted upon.
+         * @param value
+         *        The value to assign to the intercepted property.
+         *
+         * @throws JMSException if an error occurs writing the property.
+         */
+        void setProperty(JmsMessageFacade message, Object value) throws JMSException;
+
+        /**
+         * Indicates if the intercepted property has a value currently assigned.
+         *
+         * @param message
+         *        The message instance being acted upon.
+         *
+         * @return true if the intercepted property has a value assigned to it.
+         */
+        boolean propertyExists(JmsMessageFacade message);
+
+        /**
+         * Request that the intercepted property be cleared.  For properties that
+         * cannot be cleared the value should be set to the default value for that
+         * property.
+         *
+         * @param message
+         *        the target message object whose property should be cleared.
+         *
+         * @throws JMSException if an error occurs clearing the property.
+         */
+        void clearProperty(JmsMessageFacade message) throws JMSException;
+    }
+
+    static {
+<span class="fc" id="L116">        STANDARD_HEADERS.add(JMS_MESSAGEID);</span>
+<span class="fc" id="L117">        STANDARD_HEADERS.add(JMS_TIMESTAMP);</span>
+<span class="fc" id="L118">        STANDARD_HEADERS.add(JMS_CORRELATIONID);</span>
+<span class="fc" id="L119">        STANDARD_HEADERS.add(JMS_REPLYTO);</span>
+<span class="fc" id="L120">        STANDARD_HEADERS.add(JMS_DESTINATION);</span>
+<span class="fc" id="L121">        STANDARD_HEADERS.add(JMS_DELIVERY_MODE);</span>
+<span class="fc" id="L122">        STANDARD_HEADERS.add(JMS_REDELIVERED);</span>
+<span class="fc" id="L123">        STANDARD_HEADERS.add(JMS_TYPE);</span>
+<span class="fc" id="L124">        STANDARD_HEADERS.add(JMS_EXPIRATION);</span>
+<span class="fc" id="L125">        STANDARD_HEADERS.add(JMS_PRIORITY);</span>
+
+<span class="fc" id="L127">        PROPERTY_INTERCEPTERS.put(JMS_DESTINATION, new PropertyIntercepter() {</span>
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc" id="L130">                throw new JMSException(&quot;Cannot set JMS Destination as a property, use setJMSDestination() instead&quot;);</span>
+            }
+
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc" id="L135">                Destination dest = message.getDestination();</span>
+<span class="fc bfc" id="L136" title="All 2 branches covered.">                if (dest == null) {</span>
+<span class="fc" id="L137">                    return null;</span>
+                }
+<span class="fc" id="L139">                return dest.toString();</span>
+            }
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc bfc" id="L144" title="All 2 branches covered.">                return message.getDestination() != null;</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) {
+<span class="fc" id="L149">                message.setDestination(null);</span>
+<span class="fc" id="L150">            }</span>
+        });
+<span class="fc" id="L152">        PROPERTY_INTERCEPTERS.put(JMS_REPLYTO, new PropertyIntercepter() {</span>
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc" id="L155">                throw new JMSException(&quot;Cannot set JMS ReplyTo as a property, use setJMSReplTo() instead&quot;);</span>
+            }
+
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc bfc" id="L160" title="All 2 branches covered.">                if (message.getReplyTo() == null) {</span>
+<span class="fc" id="L161">                    return null;</span>
+                }
+<span class="fc" id="L163">                return message.getReplyTo().toString();</span>
+            }
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc bfc" id="L168" title="All 2 branches covered.">                return message.getReplyTo() != null;</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) {
+<span class="fc" id="L173">                message.setReplyTo(null);</span>
+<span class="fc" id="L174">            }</span>
+        });
+<span class="fc" id="L176">        PROPERTY_INTERCEPTERS.put(JMS_TYPE, new PropertyIntercepter() {</span>
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc" id="L179">                return message.getType();</span>
+            }
+
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc" id="L184">                String rc = (String) TypeConversionSupport.convert(value, String.class);</span>
+<span class="fc bfc" id="L185" title="All 2 branches covered.">                if (rc == null) {</span>
+<span class="fc" id="L186">                    throw new JMSException(&quot;Property JMSType cannot be set from a &quot; + value.getClass().getName() + &quot;.&quot;);</span>
+                }
+<span class="fc" id="L188">                message.setType(rc);</span>
+<span class="fc" id="L189">            }</span>
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc bfc" id="L193" title="All 2 branches covered.">                return message.getType() != null;</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) {
+<span class="fc" id="L198">                message.setType(null);</span>
+<span class="fc" id="L199">            }</span>
+        });
+<span class="fc" id="L201">        PROPERTY_INTERCEPTERS.put(JMS_DELIVERY_MODE, new PropertyIntercepter() {</span>
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc bfc" id="L204" title="All 2 branches covered.">                return message.isPersistent() ? &quot;PERSISTENT&quot; : &quot;NON_PERSISTENT&quot;;</span>
+            }
+
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc" id="L209">                Integer rc = null;</span>
+                try {
+<span class="fc" id="L211">                    rc = (Integer) TypeConversionSupport.convert(value, Integer.class);</span>
+<span class="fc" id="L212">                } catch (NumberFormatException nfe) {</span>
+<span class="pc bpc" id="L213" title="1 of 2 branches missed.">                    if (value instanceof String) {</span>
+<span class="fc bfc" id="L214" title="All 2 branches covered.">                        if (((String) value).equalsIgnoreCase(&quot;PERSISTENT&quot;)) {</span>
+<span class="fc" id="L215">                            rc = DeliveryMode.PERSISTENT;</span>
+<span class="fc bfc" id="L216" title="All 2 branches covered.">                        } else if (((String) value).equalsIgnoreCase(&quot;NON_PERSISTENT&quot;)) {</span>
+<span class="fc" id="L217">                            rc = DeliveryMode.NON_PERSISTENT;</span>
+                        }
+                    }
+
+<span class="fc bfc" id="L221" title="All 2 branches covered.">                    if (rc == null) {</span>
+<span class="fc" id="L222">                        throw nfe;</span>
+                    }
+<span class="fc" id="L224">                }</span>
+<span class="fc bfc" id="L225" title="All 2 branches covered.">                if (rc == null) {</span>
+<span class="fc" id="L226">                    Boolean bool = (Boolean) TypeConversionSupport.convert(value, Boolean.class);</span>
+<span class="fc bfc" id="L227" title="All 2 branches covered.">                    if (bool == null) {</span>
+<span class="fc" id="L228">                        throw new JMSException(&quot;Property JMSDeliveryMode cannot be set from a &quot; + value.getClass().getName() + &quot;.&quot;);</span>
+                    } else {
+<span class="fc" id="L230">                        message.setPersistent(bool.booleanValue());</span>
+                    }
+<span class="fc" id="L232">                } else {</span>
+<span class="fc bfc" id="L233" title="All 2 branches covered.">                    message.setPersistent(rc == DeliveryMode.PERSISTENT);</span>
+                }
+<span class="fc" id="L235">            }</span>
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc" id="L239">                return true;</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) {
+<span class="fc" id="L244">                message.setPersistent(true); // Default value</span>
+<span class="fc" id="L245">            }</span>
+        });
+<span class="fc" id="L247">        PROPERTY_INTERCEPTERS.put(JMS_PRIORITY, new PropertyIntercepter() {</span>
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc" id="L250">                return Integer.valueOf(message.getPriority());</span>
+            }
+
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc" id="L255">                Integer rc = (Integer) TypeConversionSupport.convert(value, Integer.class);</span>
+<span class="fc bfc" id="L256" title="All 2 branches covered.">                if (rc == null) {</span>
+<span class="fc" id="L257">                    throw new JMSException(&quot;Property JMSPriority cannot be set from a &quot; + value.getClass().getName() + &quot;.&quot;);</span>
+                }
+<span class="fc" id="L259">                message.setPriority(rc.byteValue());</span>
+<span class="fc" id="L260">            }</span>
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc" id="L264">                return true;</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) {
+<span class="fc" id="L269">                message.setPriority(Message.DEFAULT_PRIORITY);</span>
+<span class="fc" id="L270">            }</span>
+        });
+<span class="fc" id="L272">        PROPERTY_INTERCEPTERS.put(JMS_MESSAGEID, new PropertyIntercepter() {</span>
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc bfc" id="L275" title="All 2 branches covered.">                if (message.getMessageId() == null) {</span>
+<span class="fc" id="L276">                    return null;</span>
+                }
+<span class="fc" id="L278">                return message.getMessageId();</span>
+            }
+
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc" id="L283">                String rc = (String) TypeConversionSupport.convert(value, String.class);</span>
+<span class="fc bfc" id="L284" title="All 2 branches covered.">                if (rc == null) {</span>
+<span class="fc" id="L285">                    throw new JMSException(&quot;Property JMSMessageID cannot be set from a &quot; + value.getClass().getName() + &quot;.&quot;);</span>
+                }
+<span class="fc" id="L287">                message.setMessageId(rc);</span>
+<span class="fc" id="L288">            }</span>
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc bfc" id="L292" title="All 2 branches covered.">                return message.getMessageId() != null;</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) {
+<span class="fc" id="L297">                message.setMessageId(null);</span>
+<span class="fc" id="L298">            }</span>
+        });
+<span class="fc" id="L300">        PROPERTY_INTERCEPTERS.put(JMS_TIMESTAMP, new PropertyIntercepter() {</span>
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc" id="L303">                return Long.valueOf(message.getTimestamp());</span>
+            }
+
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc" id="L308">                Long rc = (Long) TypeConversionSupport.convert(value, Long.class);</span>
+<span class="fc bfc" id="L309" title="All 2 branches covered.">                if (rc == null) {</span>
+<span class="fc" id="L310">                    throw new JMSException(&quot;Property JMSTimestamp cannot be set from a &quot; + value.getClass().getName() + &quot;.&quot;);</span>
+                }
+<span class="fc" id="L312">                message.setTimestamp(rc.longValue());</span>
+<span class="fc" id="L313">            }</span>
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc bfc" id="L317" title="All 2 branches covered.">                return message.getTimestamp() &gt; 0;</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) {
+<span class="fc" id="L322">                message.setTimestamp(0);</span>
+<span class="fc" id="L323">            }</span>
+        });
+<span class="fc" id="L325">        PROPERTY_INTERCEPTERS.put(JMS_CORRELATIONID, new PropertyIntercepter() {</span>
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc" id="L328">                return message.getCorrelationId();</span>
+            }
+
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc" id="L333">                String rc = (String) TypeConversionSupport.convert(value, String.class);</span>
+<span class="fc bfc" id="L334" title="All 2 branches covered.">                if (rc == null) {</span>
+<span class="fc" id="L335">                    throw new JMSException(&quot;Property JMSCorrelationID cannot be set from a &quot; + value.getClass().getName() + &quot;.&quot;);</span>
+                }
+<span class="fc" id="L337">                message.setCorrelationId(rc);</span>
+<span class="fc" id="L338">            }</span>
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc bfc" id="L342" title="All 2 branches covered.">                return message.getCorrelationId() != null;</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc" id="L347">                message.setCorrelationId(null);</span>
+<span class="fc" id="L348">            }</span>
+        });
+<span class="fc" id="L350">        PROPERTY_INTERCEPTERS.put(JMS_EXPIRATION, new PropertyIntercepter() {</span>
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc" id="L353">                return Long.valueOf(message.getExpiration());</span>
+            }
+
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc" id="L358">                Long rc = (Long) TypeConversionSupport.convert(value, Long.class);</span>
+<span class="fc bfc" id="L359" title="All 2 branches covered.">                if (rc == null) {</span>
+<span class="fc" id="L360">                    throw new JMSException(&quot;Property JMSExpiration cannot be set from a &quot; + value.getClass().getName() + &quot;.&quot;);</span>
+                }
+<span class="fc" id="L362">                message.setExpiration(rc.longValue());</span>
+<span class="fc" id="L363">            }</span>
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc bfc" id="L367" title="All 2 branches covered.">                return message.getExpiration() &gt; 0;</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) {
+<span class="fc" id="L372">                message.setExpiration(0);</span>
+<span class="fc" id="L373">            }</span>
+        });
+<span class="fc" id="L375">        PROPERTY_INTERCEPTERS.put(JMS_REDELIVERED, new PropertyIntercepter() {</span>
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc" id="L378">                return Boolean.valueOf(message.isRedelivered());</span>
+            }
+
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc" id="L383">                Boolean rc = (Boolean) TypeConversionSupport.convert(value, Boolean.class);</span>
+<span class="fc bfc" id="L384" title="All 2 branches covered.">                if (rc == null) {</span>
+<span class="fc" id="L385">                    throw new JMSException(&quot;Property JMSRedelivered cannot be set from a &quot; + value.getClass().getName() + &quot;.&quot;);</span>
+                }
+<span class="fc" id="L387">                message.setRedelivered(rc.booleanValue());</span>
+<span class="fc" id="L388">            }</span>
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc" id="L392">                return message.isRedelivered();</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) {
+<span class="fc" id="L397">                message.setRedelivered(false);</span>
+<span class="fc" id="L398">            }</span>
+        });
+<span class="fc" id="L400">        PROPERTY_INTERCEPTERS.put(JMSX_DELIVERY_COUNT, new PropertyIntercepter() {</span>
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc" id="L403">                Integer rc = (Integer) TypeConversionSupport.convert(value, Integer.class);</span>
+<span class="fc bfc" id="L404" title="All 2 branches covered.">                if (rc == null) {</span>
+<span class="fc" id="L405">                    throw new JMSException(&quot;Property JMSXDeliveryCount cannot be set from a &quot; + value.getClass().getName() + &quot;.&quot;);</span>
+                }
+<span class="fc" id="L407">                message.setDeliveryCount(rc.intValue());</span>
+<span class="fc" id="L408">            }</span>
+
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc" id="L412">                return Integer.valueOf(message.getDeliveryCount());</span>
+            }
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc" id="L417">                return true;</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) {
+<span class="fc" id="L422">                message.setDeliveryCount(1);  // TODO - Delivery Count cleanup</span>
+<span class="fc" id="L423">            }</span>
+        });
+<span class="fc" id="L425">        PROPERTY_INTERCEPTERS.put(JMSX_GROUPID, new PropertyIntercepter() {</span>
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc" id="L428">                return message.getGroupId();</span>
+            }
+
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc" id="L433">                String rc = (String) TypeConversionSupport.convert(value, String.class);</span>
+<span class="fc bfc" id="L434" title="All 2 branches covered.">                if (rc == null) {</span>
+<span class="fc" id="L435">                    throw new JMSException(&quot;Property JMSXGroupID cannot be set from a &quot; + value.getClass().getName() + &quot;.&quot;);</span>
+                }
+<span class="fc" id="L437">                message.setGroupId(rc);</span>
+<span class="fc" id="L438">            }</span>
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc bfc" id="L442" title="All 2 branches covered.">                return message.getGroupId() != null;</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) {
+<span class="fc" id="L447">                message.setGroupId(null);</span>
+<span class="fc" id="L448">            }</span>
+        });
+<span class="fc" id="L450">        PROPERTY_INTERCEPTERS.put(JMSX_GROUPSEQ, new PropertyIntercepter() {</span>
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc" id="L453">                return message.getGroupSequence();</span>
+            }
+
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc" id="L458">                Integer rc = (Integer) TypeConversionSupport.convert(value, Integer.class);</span>
+<span class="fc bfc" id="L459" title="All 2 branches covered.">                if (rc == null) {</span>
+<span class="fc" id="L460">                    throw new JMSException(&quot;Property JMSXGroupSeq cannot be set from a &quot; + value.getClass().getName() + &quot;.&quot;);</span>
+                }
+<span class="fc" id="L462">                message.setGroupSequence(rc.intValue());</span>
+<span class="fc" id="L463">            }</span>
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc bfc" id="L467" title="All 2 branches covered.">                return message.getGroupSequence() != 0;</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) {
+<span class="fc" id="L472">                message.setGroupSequence(0);</span>
+<span class="fc" id="L473">            }</span>
+        });
+<span class="fc" id="L475">        PROPERTY_INTERCEPTERS.put(JMSX_USERID, new PropertyIntercepter() {</span>
+            @Override
+            public Object getProperty(JmsMessageFacade message) throws JMSException {
+<span class="fc" id="L478">                Object userId = message.getUserId();</span>
+<span class="fc bfc" id="L479" title="All 2 branches covered.">                if (userId == null) {</span>
+                    try {
+<span class="fc" id="L481">                        userId = message.getProperty(&quot;JMSXUserID&quot;);</span>
+<span class="fc" id="L482">                    } catch (Exception e) {</span>
+<span class="fc" id="L483">                        throw JmsExceptionSupport.create(e);</span>
+<span class="fc" id="L484">                    }</span>
+                }
+
+<span class="fc" id="L487">                return userId;</span>
+            }
+
+            @Override
+            public void setProperty(JmsMessageFacade message, Object value) throws JMSException {
+<span class="fc bfc" id="L492" title="All 2 branches covered.">                if (!(value instanceof String)) {</span>
+<span class="fc" id="L493">                    throw new JMSException(&quot;Property JMSXUserID cannot be set from a &quot; + value.getClass().getName() + &quot;.&quot;);</span>
+                }
+<span class="fc" id="L495">                message.setUserId((String) value);</span>
+<span class="fc" id="L496">            }</span>
+
+            @Override
+            public boolean propertyExists(JmsMessageFacade message) {
+<span class="fc bfc" id="L500" title="All 2 branches covered.">                return message.getUserId() != null;</span>
+            }
+
+            @Override
+            public void clearProperty(JmsMessageFacade message) {
+<span class="fc" id="L505">                message.setUserId(null);</span>
+<span class="fc" id="L506">            }</span>
+        });
+<span class="fc" id="L508">    }</span>
+
+    /**
+     * Static get method that takes a property name and gets the value either via
+     * a registered property get object or through the JmsMessageFacade getProperty
+     * method.
+     *
+     * @param message
+     *        the JmsMessageFacade instance to read from
+     * @param name
+     *        the property name that is being requested.
+     *
+     * @return the correct value either mapped to an Message attribute of a Message property.
+     *
+     * @throws JMSException if an error occurs while reading the defined property.
+     */
+    public static Object getProperty(JmsMessageFacade message, String name) throws JMSException {
+<span class="fc" id="L525">        Object value = null;</span>
+
+<span class="fc" id="L527">        PropertyIntercepter jmsPropertyExpression = PROPERTY_INTERCEPTERS.get(name);</span>
+<span class="fc bfc" id="L528" title="All 2 branches covered.">        if (jmsPropertyExpression != null) {</span>
+<span class="fc" id="L529">            value = jmsPropertyExpression.getProperty(message);</span>
+        } else {
+<span class="fc" id="L531">            value = message.getProperty(name);</span>
+        }
+
+<span class="fc" id="L534">        return value;</span>
+    }
+
+    /**
+     * Static set method that takes a property name and sets the value either via
+     * a registered property set object or through the JmsMessageFacade setProperty
+     * method.
+     *
+     * @param message
+     *        the JmsMessageFacade instance to write to.
+     * @param name
+     *        the property name that is being written.
+     * @param value
+     *        the new value to assign for the named property.
+     *
+     * @throws JMSException if an error occurs while writing the defined property.
+     */
+    public static void setProperty(JmsMessageFacade message, String name, Object value) throws JMSException {
+<span class="fc" id="L552">        PropertyIntercepter jmsPropertyExpression = PROPERTY_INTERCEPTERS.get(name);</span>
+<span class="fc bfc" id="L553" title="All 2 branches covered.">        if (jmsPropertyExpression != null) {</span>
+<span class="fc" id="L554">            jmsPropertyExpression.setProperty(message, value);</span>
+        } else {
+<span class="fc" id="L556">            message.setProperty(name, value);</span>
+        }
+<span class="fc" id="L558">    }</span>
+
+    /**
+     * Static inspection method to determine if a named property exists for a given message.
+     *
+     * @param message
+     *        the JmsMessageFacade instance to read from
+     * @param name
+     *        the property name that is being inspected.
+     *
+     * @return true if the message contains the given property.
+     *
+     * @throws JMSException if an error occurs while validating the defined property.
+     */
+    public static boolean propertyExists(JmsMessageFacade message, String name) throws JMSException {
+<span class="fc" id="L573">        PropertyIntercepter jmsPropertyExpression = PROPERTY_INTERCEPTERS.get(name);</span>
+<span class="fc bfc" id="L574" title="All 2 branches covered.">        if (jmsPropertyExpression != null) {</span>
+<span class="fc" id="L575">            return jmsPropertyExpression.propertyExists(message);</span>
+        } else {
+<span class="fc" id="L577">            return message.propertyExists(name);</span>
+        }
+    }
+
+    /**
+     * For each of the currently configured message property intercepter instances clear or
+     * reset the value to its default.  Once complete the method will direct the given provider
+     * message facade to clear any message properties that might have been set.
+     *
+     * @param message
+     *        the JmsMessageFacade instance to read from
+     * @param excludeStandardJMSHeaders
+     *        whether the standard JMS header names should be excluded from the returned set
+     *
+     * @throws JMSException if an error occurs while validating the defined property.
+     */
+    public static void clearProperties(JmsMessageFacade message, boolean excludeStandardJMSHeaders) throws JMSException {
+<span class="fc bfc" id="L594" title="All 2 branches covered.">        for (Entry&lt;String, PropertyIntercepter&gt; entry : PROPERTY_INTERCEPTERS.entrySet()) {</span>
+<span class="fc bfc" id="L595" title="All 4 branches covered.">            if (excludeStandardJMSHeaders &amp;&amp; STANDARD_HEADERS.contains(entry.getKey())) {</span>
+<span class="fc" id="L596">                continue;</span>
+            }
+
+<span class="fc" id="L599">            entry.getValue().clearProperty(message);</span>
+<span class="fc" id="L600">        }</span>
+
+<span class="fc" id="L602">        message.clearProperties();</span>
+<span class="fc" id="L603">    }</span>
+
+    /**
+     * For each of the currently configured message property intercepter instance a
+     * string key value is inserted into an Set and returned.
+     *
+     * @param message
+     *        the JmsMessageFacade instance to read property names from.
+     *
+     * @return a {@code Set&lt;String&gt;} containing the names of all intercepted properties.
+     *
+     * @throws JMSException if an error occurs while gathering the message property names.
+     */
+    public static Set&lt;String&gt; getAllPropertyNames(JmsMessageFacade message) throws JMSException {
+<span class="fc" id="L617">        Set&lt;String&gt; names = new HashSet&lt;String&gt;(PROPERTY_INTERCEPTERS.keySet());</span>
+<span class="fc" id="L618">        names.addAll(message.getPropertyNames());</span>
+<span class="fc" id="L619">        return names;</span>
+    }
+
+    /**
+     * For each of the currently configured message property intercepter instance a
+     * string key value is inserted into an Set and returned if the property has a
+     * value and is available for a read operation. The Set returned may be
+     * manipulated by the receiver without impacting the facade, and an empty set
+     * will be returned if there are no matching properties.
+     *
+     * @param message
+     *        the JmsMessageFacade instance to read from
+     * @param excludeStandardJMSHeaders
+     *        whether the standard JMS header names should be excluded from the returned set
+     *
+     * @return a {@code Set&lt;String&gt;} containing the names of all intercepted properties with a value.
+     *
+     * @throws JMSException if an error occurs while gathering the message property names.
+     */
+    public static Set&lt;String&gt; getPropertyNames(JmsMessageFacade message, boolean excludeStandardJMSHeaders) throws JMSException {
+<span class="fc" id="L639">        Set&lt;String&gt; names = new HashSet&lt;String&gt;();</span>
+<span class="fc bfc" id="L640" title="All 2 branches covered.">        for (Entry&lt;String, PropertyIntercepter&gt; entry : PROPERTY_INTERCEPTERS.entrySet()) {</span>
+<span class="fc bfc" id="L641" title="All 4 branches covered.">            if (excludeStandardJMSHeaders &amp;&amp; STANDARD_HEADERS.contains(entry.getKey())) {</span>
+<span class="fc" id="L642">                continue;</span>
+            }
+
+<span class="fc bfc" id="L645" title="All 2 branches covered.">            if (entry.getValue().propertyExists(message)) {</span>
+<span class="fc" id="L646">                names.add(entry.getKey());</span>
+            }
+<span class="fc" id="L648">        }</span>
+
+<span class="fc" id="L650">        names.addAll(message.getPropertyNames());</span>
+
+<span class="fc" id="L652">        return names;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

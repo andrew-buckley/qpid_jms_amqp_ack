@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ToStringSupport.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.util</a> &gt; <span class="el_source">ToStringSupport.java</span></div><h1>ToStringSupport.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.util;
+
+import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Set;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public final class ToStringSupport {
+
+<span class="fc" id="L33">    private static final Logger LOG = LoggerFactory.getLogger(ToStringSupport.class);</span>
+
+<span class="nc" id="L35">    private ToStringSupport() {</span>
+<span class="nc" id="L36">    }</span>
+
+    public static String toString(Object target) {
+<span class="fc" id="L39">        return toString(target, Object.class, null);</span>
+    }
+
+    @SuppressWarnings({ &quot;rawtypes&quot; })
+    public static String toString(Object target, Class stopClass) {
+<span class="nc" id="L44">        return toString(target, stopClass, null);</span>
+    }
+
+    @SuppressWarnings({ &quot;unchecked&quot;, &quot;rawtypes&quot; })
+    public static String toString(Object target, Class stopClass, Map&lt;String, Object&gt; overrideFields) {
+<span class="fc" id="L49">        LinkedHashMap&lt;String, Object&gt; map = new LinkedHashMap&lt;String, Object&gt;();</span>
+<span class="fc" id="L50">        addFields(target, target.getClass(), stopClass, map);</span>
+<span class="pc bpc" id="L51" title="1 of 2 branches missed.">        if (overrideFields != null) {</span>
+<span class="nc bnc" id="L52" title="All 2 branches missed.">            for(Entry&lt;String, Object&gt; entry : overrideFields.entrySet()) {</span>
+<span class="nc" id="L53">                map.put(entry.getKey(), entry.getValue());</span>
+<span class="nc" id="L54">            }</span>
+
+        }
+<span class="fc" id="L57">        StringBuffer buffer = new StringBuffer(simpleName(target.getClass()));</span>
+<span class="fc" id="L58">        buffer.append(&quot; {&quot;);</span>
+<span class="fc" id="L59">        Set&lt;Entry&lt;String, Object&gt;&gt; entrySet = map.entrySet();</span>
+<span class="fc" id="L60">        boolean first = true;</span>
+<span class="fc bfc" id="L61" title="All 2 branches covered.">        for (Map.Entry&lt;String,Object&gt; entry : entrySet) {</span>
+<span class="fc" id="L62">            Object value = entry.getValue();</span>
+<span class="fc" id="L63">            Object key = entry.getKey();</span>
+<span class="fc bfc" id="L64" title="All 2 branches covered.">            if (first) {</span>
+<span class="fc" id="L65">                first = false;</span>
+            } else {
+<span class="fc" id="L67">                buffer.append(&quot;, &quot;);</span>
+            }
+<span class="fc" id="L69">            buffer.append(key);</span>
+<span class="fc" id="L70">            buffer.append(&quot; = &quot;);</span>
+
+<span class="fc" id="L72">            appendToString(buffer, key, value);</span>
+<span class="fc" id="L73">        }</span>
+<span class="fc" id="L74">        buffer.append(&quot;}&quot;);</span>
+<span class="fc" id="L75">        return buffer.toString();</span>
+    }
+
+    protected static void appendToString(StringBuffer buffer, Object key, Object value) {
+<span class="pc bpc" id="L79" title="1 of 2 branches missed.">        if (key.toString().toLowerCase(Locale.ENGLISH).contains(&quot;password&quot;)){</span>
+<span class="nc" id="L80">            buffer.append(&quot;*****&quot;);</span>
+        } else {
+<span class="fc" id="L82">            buffer.append(value);</span>
+        }
+<span class="fc" id="L84">    }</span>
+
+    public static String simpleName(Class&lt;?&gt; clazz) {
+<span class="fc" id="L87">        String name = clazz.getName();</span>
+<span class="fc" id="L88">        int p = name.lastIndexOf(&quot;.&quot;);</span>
+<span class="pc bpc" id="L89" title="1 of 2 branches missed.">        if (p &gt;= 0) {</span>
+<span class="fc" id="L90">            name = name.substring(p + 1);</span>
+        }
+<span class="fc" id="L92">        return name;</span>
+    }
+
+    @SuppressWarnings({ &quot;rawtypes&quot; })
+    private static void addFields(Object target, Class startClass, Class&lt;Object&gt; stopClass, LinkedHashMap&lt;String, Object&gt; map) {
+
+<span class="fc bfc" id="L98" title="All 2 branches covered.">        if (startClass != stopClass) {</span>
+<span class="fc" id="L99">            addFields(target, startClass.getSuperclass(), stopClass, map);</span>
+        }
+
+<span class="fc" id="L102">        Field[] fields = startClass.getDeclaredFields();</span>
+<span class="fc bfc" id="L103" title="All 2 branches covered.">        for (Field field : fields) {</span>
+<span class="fc bfc" id="L104" title="All 6 branches covered.">            if (Modifier.isStatic(field.getModifiers()) || Modifier.isTransient(field.getModifiers())</span>
+                || Modifier.isPrivate(field.getModifiers())) {
+<span class="fc" id="L106">                continue;</span>
+            }
+
+            try {
+<span class="fc" id="L110">                field.setAccessible(true);</span>
+<span class="fc" id="L111">                Object o = field.get(target);</span>
+<span class="pc bpc" id="L112" title="1 of 4 branches missed.">                if (o != null &amp;&amp; o.getClass().isArray()) {</span>
+                    try {
+<span class="nc" id="L114">                        o = Arrays.asList((Object[])o);</span>
+<span class="nc" id="L115">                    } catch (Exception e) {</span>
+<span class="nc" id="L116">                    }</span>
+                }
+<span class="fc" id="L118">                map.put(field.getName(), o);</span>
+<span class="nc" id="L119">            } catch (Exception e) {</span>
+<span class="nc" id="L120">                LOG.debug(&quot;Error getting field &quot; + field + &quot; on class &quot; + startClass + &quot;. This exception is ignored.&quot;, e);</span>
+<span class="fc" id="L121">            }</span>
+        }
+<span class="fc" id="L123">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

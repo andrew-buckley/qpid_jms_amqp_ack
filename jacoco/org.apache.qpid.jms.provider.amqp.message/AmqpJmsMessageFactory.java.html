@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpJmsMessageFactory.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp.message</a> &gt; <span class="el_source">AmqpJmsMessageFactory.java</span></div><h1>AmqpJmsMessageFactory.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp.message;
+
+import java.io.IOException;
+import java.io.Serializable;
+
+import javax.jms.JMSException;
+
+import org.apache.qpid.jms.exceptions.JmsExceptionSupport;
+import org.apache.qpid.jms.message.JmsBytesMessage;
+import org.apache.qpid.jms.message.JmsMapMessage;
+import org.apache.qpid.jms.message.JmsMessage;
+import org.apache.qpid.jms.message.JmsMessageFactory;
+import org.apache.qpid.jms.message.JmsObjectMessage;
+import org.apache.qpid.jms.message.JmsStreamMessage;
+import org.apache.qpid.jms.message.JmsTextMessage;
+import org.apache.qpid.jms.message.facade.JmsObjectMessageFacade;
+import org.apache.qpid.jms.message.facade.JmsTextMessageFacade;
+import org.apache.qpid.jms.provider.amqp.AmqpConnection;
+
+/**
+ * AMQP Message Factory instance used to create new JmsMessage types that wrap an
+ * Proton AMQP Message.  This class is used by the JMS layer to create its JMS
+ * Message instances, the messages returned here should be created in a proper
+ * initially empty state for the client to populate.
+ */
+public class AmqpJmsMessageFactory implements JmsMessageFactory {
+
+    private final AmqpConnection connection;
+
+<span class="fc" id="L46">    public AmqpJmsMessageFactory(AmqpConnection connection) {</span>
+<span class="fc" id="L47">        this.connection = connection;</span>
+<span class="fc" id="L48">    }</span>
+
+    public AmqpConnection getAmqpConnection() {
+<span class="fc" id="L51">        return this.connection;</span>
+    }
+
+    @Override
+    public JmsMessage createMessage() throws JMSException {
+<span class="fc" id="L56">        return new JmsMessage(new AmqpJmsMessageFacade(connection));</span>
+    }
+
+    @Override
+    public JmsTextMessage createTextMessage() throws JMSException {
+<span class="fc" id="L61">        return createTextMessage(null);</span>
+    }
+
+    @Override
+    public JmsTextMessage createTextMessage(String payload) throws JMSException {
+
+<span class="fc" id="L67">        JmsTextMessageFacade facade = new AmqpJmsTextMessageFacade(connection);</span>
+
+<span class="fc bfc" id="L69" title="All 2 branches covered.">        if (payload != null) {</span>
+<span class="fc" id="L70">            facade.setText(payload);</span>
+        }
+
+<span class="fc" id="L73">        return new JmsTextMessage(facade);</span>
+    }
+
+    @Override
+    public JmsBytesMessage createBytesMessage() throws JMSException {
+<span class="fc" id="L78">        return new JmsBytesMessage(new AmqpJmsBytesMessageFacade(connection));</span>
+    }
+
+    @Override
+    public JmsMapMessage createMapMessage() throws JMSException {
+<span class="fc" id="L83">        return new JmsMapMessage(new AmqpJmsMapMessageFacade(connection));</span>
+    }
+
+    @Override
+    public JmsStreamMessage createStreamMessage() throws JMSException {
+<span class="fc" id="L88">        return new JmsStreamMessage(new AmqpJmsStreamMessageFacade(connection));</span>
+    }
+
+    @Override
+    public JmsObjectMessage createObjectMessage() throws JMSException {
+<span class="fc" id="L93">        return createObjectMessage(null);</span>
+    }
+
+    @Override
+    public JmsObjectMessage createObjectMessage(Serializable payload) throws JMSException {
+<span class="fc" id="L98">        JmsObjectMessageFacade facade = new AmqpJmsObjectMessageFacade(connection, connection.isObjectMessageUsesAmqpTypes());</span>
+
+<span class="fc bfc" id="L100" title="All 2 branches covered.">        if (payload != null) {</span>
+            try {
+<span class="fc" id="L102">                facade.setObject(payload);</span>
+<span class="fc" id="L103">            } catch (IOException e) {</span>
+<span class="fc" id="L104">                throw JmsExceptionSupport.create(e);</span>
+<span class="fc" id="L105">            }</span>
+        }
+
+<span class="fc" id="L108">        return new JmsObjectMessage(facade);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,338 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpConnection.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp</a> &gt; <span class="el_source">AmqpConnection.java</span></div><h1>AmqpConnection.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp;
+
+import static org.apache.qpid.jms.provider.amqp.AmqpSupport.SOLE_CONNECTION_CAPABILITY;
+
+import java.net.URI;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import javax.jms.JMSException;
+import javax.jms.JMSSecurityException;
+import javax.jms.Session;
+
+import org.apache.qpid.jms.JmsDestination;
+import org.apache.qpid.jms.JmsTemporaryDestination;
+import org.apache.qpid.jms.meta.JmsConnectionInfo;
+import org.apache.qpid.jms.meta.JmsSessionId;
+import org.apache.qpid.jms.meta.JmsSessionInfo;
+import org.apache.qpid.jms.provider.AsyncResult;
+import org.apache.qpid.jms.provider.amqp.message.AmqpJmsMessageFactory;
+import org.apache.qpid.jms.util.IOExceptionSupport;
+import org.apache.qpid.jms.util.MetaDataSupport;
+import org.apache.qpid.proton.amqp.Symbol;
+import org.apache.qpid.proton.engine.Connection;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class AmqpConnection extends AmqpAbstractResource&lt;JmsConnectionInfo, Connection&gt; {
+
+<span class="fc" id="L46">    private static final Logger LOG = LoggerFactory.getLogger(AmqpConnection.class);</span>
+
+    private final AmqpJmsMessageFactory amqpMessageFactory;
+
+    private final URI remoteURI;
+<span class="fc" id="L51">    private final Map&lt;JmsSessionId, AmqpSession&gt; sessions = new HashMap&lt;JmsSessionId, AmqpSession&gt;();</span>
+<span class="fc" id="L52">    private final Map&lt;JmsDestination, AmqpTemporaryDestination&gt; tempDests = new HashMap&lt;JmsDestination, AmqpTemporaryDestination&gt;();</span>
+    private final AmqpProvider provider;
+    private AmqpSaslAuthenticator authenticator;
+    private final AmqpConnectionSession connectionSession;
+    private final AmqpConnectionProperties properties;
+
+<span class="fc" id="L58">    private boolean objectMessageUsesAmqpTypes = false;</span>
+<span class="fc" id="L59">    private boolean anonymousProducerCache = false;</span>
+<span class="fc" id="L60">    private int anonymousProducerCacheSize = 10;</span>
+
+    public AmqpConnection(AmqpProvider provider, Connection protonConnection, AmqpSaslAuthenticator authenticator, JmsConnectionInfo info) {
+<span class="fc" id="L63">        super(info, protonConnection);</span>
+
+<span class="fc" id="L65">        this.provider = provider;</span>
+<span class="fc" id="L66">        this.remoteURI = provider.getRemoteURI();</span>
+<span class="fc" id="L67">        this.amqpMessageFactory = new AmqpJmsMessageFactory(this);</span>
+<span class="fc" id="L68">        this.authenticator = authenticator;</span>
+
+<span class="fc" id="L70">        this.resource.getConnectionId().setProviderHint(this);</span>
+
+        // Create connection properties initialized with defaults from the JmsConnectionInfo
+<span class="fc" id="L73">        this.properties = new AmqpConnectionProperties(info);</span>
+
+        // Create a Session for this connection that is used for Temporary Destinations
+        // and perhaps later on management and advisory monitoring.
+<span class="fc" id="L77">        JmsSessionInfo sessionInfo = new JmsSessionInfo(this.resource, -1);</span>
+<span class="fc" id="L78">        sessionInfo.setAcknowledgementMode(Session.AUTO_ACKNOWLEDGE);</span>
+
+<span class="fc" id="L80">        this.connectionSession = new AmqpConnectionSession(this, sessionInfo);</span>
+<span class="fc" id="L81">    }</span>
+
+    @Override
+    protected void doOpen() {
+<span class="fc" id="L85">        String hostname = provider.getVhost();</span>
+<span class="fc bfc" id="L86" title="All 2 branches covered.">        if(hostname == null) {</span>
+<span class="fc" id="L87">            hostname = remoteURI.getHost();</span>
+<span class="fc bfc" id="L88" title="All 2 branches covered.">        } else if (hostname.isEmpty()) {</span>
+<span class="fc" id="L89">            hostname = null;</span>
+        }
+
+<span class="fc" id="L92">        Map&lt;Symbol, Object&gt; props = new LinkedHashMap&lt;Symbol, Object&gt;();</span>
+<span class="fc" id="L93">        props.put(AmqpSupport.PRODUCT, MetaDataSupport.PROVIDER_NAME);</span>
+<span class="fc" id="L94">        props.put(AmqpSupport.VERSION, MetaDataSupport.PROVIDER_VERSION);</span>
+<span class="fc" id="L95">        props.put(AmqpSupport.PLATFORM, MetaDataSupport.PLATFORM_DETAILS);</span>
+
+<span class="fc" id="L97">        Connection conn = getEndpoint();</span>
+<span class="fc" id="L98">        conn.setHostname(hostname);</span>
+<span class="fc" id="L99">        conn.setContainer(resource.getClientId());</span>
+<span class="fc" id="L100">        conn.setDesiredCapabilities(new Symbol[] { SOLE_CONNECTION_CAPABILITY });</span>
+<span class="fc" id="L101">        conn.setProperties(props);</span>
+
+<span class="fc" id="L103">        super.doOpen();</span>
+<span class="fc" id="L104">    }</span>
+
+    public AmqpSession createSession(JmsSessionInfo sessionInfo) {
+<span class="fc" id="L107">        AmqpSession session = new AmqpSession(this, sessionInfo);</span>
+<span class="fc" id="L108">        return session;</span>
+    }
+
+    public AmqpTemporaryDestination createTemporaryDestination(JmsTemporaryDestination destination) {
+<span class="fc" id="L112">        AmqpTemporaryDestination temporary = new AmqpTemporaryDestination(connectionSession, destination);</span>
+<span class="fc" id="L113">        return temporary;</span>
+    }
+
+    public AmqpTemporaryDestination getTemporaryDestination(JmsTemporaryDestination destination) {
+<span class="fc" id="L117">        return tempDests.get(destination);</span>
+    }
+
+    public void unsubscribe(String subscriptionName, AsyncResult request) {
+
+<span class="nc bnc" id="L122" title="All 2 branches missed.">        for (AmqpSession session : sessions.values()) {</span>
+<span class="nc bnc" id="L123" title="All 2 branches missed.">            if (session.containsSubscription(subscriptionName)) {</span>
+<span class="nc" id="L124">                request.onFailure(new JMSException(&quot;Cannot remove an active durable subscription&quot;));</span>
+<span class="nc" id="L125">                return;</span>
+            }
+<span class="nc" id="L127">        }</span>
+
+<span class="nc" id="L129">        connectionSession.unsubscribe(subscriptionName, request);</span>
+<span class="nc" id="L130">    }</span>
+
+    @Override
+    protected void doOpenCompletion() {
+<span class="fc" id="L134">        properties.initialize(getEndpoint().getRemoteOfferedCapabilities(), getEndpoint().getRemoteProperties());</span>
+
+        // If the remote reports that the connection attempt failed then we can assume a
+        // close follows so do nothing and wait so a proper error can be constructed from
+        // the information in the remote close.
+<span class="fc bfc" id="L139" title="All 2 branches covered.">        if (!properties.isConnectionOpenFailed()) {</span>
+<span class="fc" id="L140">            connectionSession.open(new AsyncResult() {</span>
+
+                @Override
+                public boolean isComplete() {
+<span class="nc" id="L144">                    return connectionSession.isOpen();</span>
+                }
+
+                @Override
+                public void onSuccess() {
+<span class="fc" id="L149">                    LOG.debug(&quot;{} is now open: &quot;, AmqpConnection.this);</span>
+<span class="fc" id="L150">                    opened();</span>
+<span class="fc" id="L151">                }</span>
+
+                @Override
+                public void onFailure(Throwable result) {
+<span class="nc" id="L155">                    LOG.debug(&quot;AMQP Connection Session failed to open.&quot;);</span>
+<span class="nc" id="L156">                    failed(IOExceptionSupport.create(result));</span>
+<span class="nc" id="L157">                }</span>
+            });
+        }
+<span class="fc" id="L160">    }</span>
+
+    public void processSaslAuthentication() {
+<span class="fc bfc" id="L163" title="All 2 branches covered.">        if (authenticator == null) {</span>
+<span class="fc" id="L164">            return;</span>
+        }
+
+        try {
+<span class="fc bfc" id="L168" title="All 2 branches covered.">            if (authenticator.authenticate()) {</span>
+<span class="fc" id="L169">                authenticator = null;</span>
+            }
+<span class="fc" id="L171">        } catch (JMSSecurityException ex) {</span>
+            try {
+                // TODO: this is a hack to stop Proton sending the open(+close) frame(s)
+<span class="fc" id="L174">                org.apache.qpid.proton.engine.Transport t = getEndpoint().getTransport();</span>
+<span class="fc" id="L175">                t.close_head();</span>
+            } finally {
+<span class="pc" id="L177">                failed(ex);</span>
+<span class="fc" id="L178">            }</span>
+<span class="fc" id="L179">        }</span>
+<span class="fc" id="L180">    }</span>
+
+    void addTemporaryDestination(AmqpTemporaryDestination destination) {
+<span class="fc" id="L183">        tempDests.put(destination.getJmsDestination(), destination);</span>
+<span class="fc" id="L184">    }</span>
+
+    void removeTemporaryDestination(AmqpTemporaryDestination destination) {
+<span class="fc" id="L187">        tempDests.remove(destination.getJmsDestination());</span>
+<span class="fc" id="L188">    }</span>
+
+    void addSession(AmqpSession session) {
+<span class="fc" id="L191">        this.sessions.put(session.getSessionId(), session);</span>
+<span class="fc" id="L192">    }</span>
+
+    void removeSession(AmqpSession session) {
+<span class="fc" id="L195">        this.sessions.remove(session.getSessionId());</span>
+<span class="fc" id="L196">    }</span>
+
+    public JmsConnectionInfo getConnectionInfo() {
+<span class="fc" id="L199">        return this.resource;</span>
+    }
+
+    public Connection getProtonConnection() {
+<span class="fc" id="L203">        return this.getEndpoint();</span>
+    }
+
+    public URI getRemoteURI() {
+<span class="nc" id="L207">        return this.remoteURI;</span>
+    }
+
+    public String getUsername() {
+<span class="nc" id="L211">        return this.resource.getUsername();</span>
+    }
+
+    public String getPassword() {
+<span class="nc" id="L215">        return this.resource.getPassword();</span>
+    }
+
+    public AmqpProvider getProvider() {
+<span class="fc" id="L219">        return this.provider;</span>
+    }
+
+    public String getQueuePrefix() {
+<span class="fc" id="L223">        return properties.getQueuePrefix();</span>
+    }
+
+    public void setQueuePrefix(String queuePrefix) {
+<span class="nc" id="L227">        properties.setQueuePrefix(queuePrefix);</span>
+<span class="nc" id="L228">    }</span>
+
+    public String getTopicPrefix() {
+<span class="fc" id="L231">        return properties.getTopicPrefix();</span>
+    }
+
+    public void setTopicPrefix(String topicPrefix) {
+<span class="nc" id="L235">        properties.setTopicPrefix(topicPrefix);</span>
+<span class="nc" id="L236">    }</span>
+
+    /**
+     * Retrieve the indicated Session instance from the list of active sessions.
+     *
+     * @param sessionId
+     *        The JmsSessionId that's associated with the target session.
+     *
+     * @return the AmqpSession associated with the given id.
+     */
+    public AmqpSession getSession(JmsSessionId sessionId) {
+<span class="pc bpc" id="L247" title="1 of 2 branches missed.">        if (sessionId.getProviderHint() instanceof AmqpSession) {</span>
+<span class="fc" id="L248">            return (AmqpSession) sessionId.getProviderHint();</span>
+        }
+<span class="nc" id="L250">        return this.sessions.get(sessionId);</span>
+    }
+
+    /**
+     * @return true if the provider has been configured for presettle operations.
+     */
+    public boolean isPresettleConsumers() {
+<span class="fc" id="L257">        return provider.isPresettleConsumers();</span>
+    }
+
+    /**
+     * @return true if the provider has been configured for presettle operations.
+     */
+    public boolean isPresettleProducers() {
+<span class="fc" id="L264">        return provider.isPresettleProducers();</span>
+    }
+
+    /**
+     * @return true if anonymous producers should be cached or closed on send complete.
+     */
+    public boolean isAnonymousProducerCache() {
+<span class="fc" id="L271">        return anonymousProducerCache;</span>
+    }
+
+    /**
+     * @param anonymousProducerCache
+     *        enable or disables the caching or anonymous producers.
+     */
+    public void setAnonymousProducerCache(boolean anonymousProducerCache) {
+<span class="nc" id="L279">        this.anonymousProducerCache = anonymousProducerCache;</span>
+<span class="nc" id="L280">    }</span>
+
+    /**
+     * @return the number of anonymous producers stored in each cache.
+     */
+    public int getAnonymousProducerCacheSize() {
+<span class="nc" id="L286">        return anonymousProducerCacheSize;</span>
+    }
+
+    /**
+     * @param anonymousProducerCacheSize
+     *        the number of producers each anonymous producer instance will cache.
+     */
+    public void setAnonymousProducerCacheSize(int anonymousProducerCacheSize) {
+<span class="nc" id="L294">        this.anonymousProducerCacheSize = anonymousProducerCacheSize;</span>
+<span class="nc" id="L295">    }</span>
+
+    /**
+     * @return true if new ObjectMessage instance should default to using AMQP Typed bodies.
+     */
+    public boolean isObjectMessageUsesAmqpTypes() {
+<span class="fc" id="L301">        return objectMessageUsesAmqpTypes;</span>
+    }
+
+    /**
+     * Configures the body type used in ObjectMessage instances that are sent from
+     * this connection.
+     *
+     * @param objectMessageUsesAmqpTypes
+     *        the objectMessageUsesAmqpTypes value to set.
+     */
+    public void setObjectMessageUsesAmqpTypes(boolean objectMessageUsesAmqpTypes) {
+<span class="nc" id="L312">        this.objectMessageUsesAmqpTypes = objectMessageUsesAmqpTypes;</span>
+<span class="nc" id="L313">    }</span>
+
+    /**
+     * @return the AMQP based JmsMessageFactory for this Connection.
+     */
+    public AmqpJmsMessageFactory getAmqpMessageFactory() {
+<span class="fc" id="L319">        return this.amqpMessageFactory;</span>
+    }
+
+    /**
+     * Returns the connection properties for an established connection which defines the various
+     * capabilities and configuration options of the remote connection.  Prior to the establishment
+     * of a connection this method returns null.
+     *
+     * @return the properties available for this connection or null if not connected.
+     */
+    public AmqpConnectionProperties getProperties() {
+<span class="fc" id="L330">        return properties;</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L335">        return &quot;AmqpConnection { &quot; + getConnectionInfo().getConnectionId() + &quot; }&quot;;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

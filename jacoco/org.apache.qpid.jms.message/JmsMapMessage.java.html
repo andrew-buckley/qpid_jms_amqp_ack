@@ -1,0 +1,320 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>JmsMapMessage.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.message</a> &gt; <span class="el_source">JmsMapMessage.java</span></div><h1>JmsMapMessage.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.message;
+
+import java.util.Enumeration;
+
+import javax.jms.JMSException;
+import javax.jms.MapMessage;
+import javax.jms.MessageFormatException;
+
+import org.apache.qpid.jms.message.facade.JmsMapMessageFacade;
+
+/**
+ * Implementation of the JMS MapMessage.
+ */
+public class JmsMapMessage extends JmsMessage implements MapMessage {
+
+    JmsMapMessageFacade facade;
+
+    public JmsMapMessage(JmsMapMessageFacade facade) {
+<span class="fc" id="L35">        super(facade);</span>
+<span class="fc" id="L36">        this.facade = facade;</span>
+<span class="fc" id="L37">    }</span>
+
+    @Override
+    public JmsMapMessage copy() throws JMSException {
+<span class="fc" id="L41">        JmsMapMessage other = new JmsMapMessage(facade.copy());</span>
+<span class="fc" id="L42">        other.copy(this);</span>
+<span class="fc" id="L43">        return other;</span>
+    }
+
+    @Override
+    public void clearBody() throws JMSException {
+<span class="fc" id="L48">        super.clearBody();</span>
+<span class="fc" id="L49">        facade.clearBody();</span>
+<span class="fc" id="L50">    }</span>
+
+    @Override
+    public boolean getBoolean(String name) throws JMSException {
+<span class="fc" id="L54">        Object value = getObject(name);</span>
+
+<span class="fc bfc" id="L56" title="All 2 branches covered.">        if (value instanceof Boolean) {</span>
+<span class="fc" id="L57">            return ((Boolean) value).booleanValue();</span>
+<span class="fc bfc" id="L58" title="All 4 branches covered.">        } else if (value instanceof String || value == null) {</span>
+<span class="fc" id="L59">            return Boolean.valueOf((String) value).booleanValue();</span>
+        } else {
+<span class="fc" id="L61">            throw new MessageFormatException(&quot;Cannot read a boolean from &quot; + value.getClass().getSimpleName());</span>
+        }
+    }
+
+    @Override
+    public byte getByte(String name) throws JMSException {
+<span class="fc" id="L67">        Object value = getObject(name);</span>
+
+<span class="fc bfc" id="L69" title="All 2 branches covered.">        if (value instanceof Byte) {</span>
+<span class="fc" id="L70">            return ((Byte) value).byteValue();</span>
+<span class="fc bfc" id="L71" title="All 4 branches covered.">        } else if (value instanceof String || value == null) {</span>
+<span class="fc" id="L72">            return Byte.valueOf((String) value).byteValue();</span>
+        } else {
+<span class="fc" id="L74">            throw new MessageFormatException(&quot;Cannot read a byte from &quot; + value.getClass().getSimpleName());</span>
+        }
+    }
+
+    @Override
+    public short getShort(String name) throws JMSException {
+<span class="fc" id="L80">        Object value = getObject(name);</span>
+
+<span class="fc bfc" id="L82" title="All 2 branches covered.">        if (value instanceof Short) {</span>
+<span class="fc" id="L83">            return ((Short) value).shortValue();</span>
+<span class="fc bfc" id="L84" title="All 2 branches covered.">        } else if (value instanceof Byte) {</span>
+<span class="fc" id="L85">            return ((Byte) value).shortValue();</span>
+<span class="fc bfc" id="L86" title="All 4 branches covered.">        } else if (value instanceof String || value == null) {</span>
+<span class="fc" id="L87">            return Short.valueOf((String) value).shortValue();</span>
+        } else {
+<span class="fc" id="L89">            throw new MessageFormatException(&quot;Cannot read a short from &quot; + value.getClass().getSimpleName());</span>
+        }
+    }
+
+    @Override
+    public char getChar(String name) throws JMSException {
+<span class="fc" id="L95">        Object value = getObject(name);</span>
+
+<span class="fc bfc" id="L97" title="All 2 branches covered.">        if (value == null) {</span>
+<span class="fc" id="L98">            throw new NullPointerException();</span>
+<span class="fc bfc" id="L99" title="All 2 branches covered.">        } else if (value instanceof Character) {</span>
+<span class="fc" id="L100">            return ((Character) value).charValue();</span>
+        } else {
+<span class="fc" id="L102">            throw new MessageFormatException(&quot;Cannot read a char from &quot; + value.getClass().getSimpleName());</span>
+        }
+    }
+
+    @Override
+    public int getInt(String name) throws JMSException {
+<span class="fc" id="L108">        Object value = getObject(name);</span>
+
+<span class="fc bfc" id="L110" title="All 2 branches covered.">        if (value instanceof Integer) {</span>
+<span class="fc" id="L111">            return ((Integer) value).intValue();</span>
+<span class="fc bfc" id="L112" title="All 2 branches covered.">        } else if (value instanceof Short) {</span>
+<span class="fc" id="L113">            return ((Short) value).intValue();</span>
+<span class="fc bfc" id="L114" title="All 2 branches covered.">        } else if (value instanceof Byte) {</span>
+<span class="fc" id="L115">            return ((Byte) value).intValue();</span>
+<span class="fc bfc" id="L116" title="All 4 branches covered.">        } else if (value instanceof String || value == null) {</span>
+<span class="fc" id="L117">            return Integer.valueOf((String) value).intValue();</span>
+        } else {
+<span class="fc" id="L119">            throw new MessageFormatException(&quot;Cannot read an int from &quot; + value.getClass().getSimpleName());</span>
+        }
+    }
+
+    @Override
+    public long getLong(String name) throws JMSException {
+<span class="fc" id="L125">        Object value = getObject(name);</span>
+
+<span class="fc bfc" id="L127" title="All 2 branches covered.">        if (value instanceof Long) {</span>
+<span class="fc" id="L128">            return ((Long) value).longValue();</span>
+<span class="fc bfc" id="L129" title="All 2 branches covered.">        } else if (value instanceof Integer) {</span>
+<span class="fc" id="L130">            return ((Integer) value).longValue();</span>
+<span class="fc bfc" id="L131" title="All 2 branches covered.">        } else if (value instanceof Short) {</span>
+<span class="fc" id="L132">            return ((Short) value).longValue();</span>
+<span class="fc bfc" id="L133" title="All 2 branches covered.">        } else if (value instanceof Byte) {</span>
+<span class="fc" id="L134">            return ((Byte) value).longValue();</span>
+<span class="fc bfc" id="L135" title="All 4 branches covered.">        } else if (value instanceof String || value == null) {</span>
+<span class="fc" id="L136">            return Long.valueOf((String) value).longValue();</span>
+        } else {
+<span class="fc" id="L138">            throw new MessageFormatException(&quot;Cannot read a long from &quot; + value.getClass().getSimpleName());</span>
+        }
+    }
+
+    @Override
+    public float getFloat(String name) throws JMSException {
+<span class="fc" id="L144">        Object value = getObject(name);</span>
+
+<span class="fc bfc" id="L146" title="All 2 branches covered.">        if (value instanceof Float) {</span>
+<span class="fc" id="L147">            return ((Float) value).floatValue();</span>
+<span class="fc bfc" id="L148" title="All 4 branches covered.">        } else if (value instanceof String || value == null) {</span>
+<span class="fc" id="L149">            return Float.valueOf((String) value).floatValue();</span>
+        } else {
+<span class="fc" id="L151">            throw new MessageFormatException(&quot;Cannot read a float from &quot; + value.getClass().getSimpleName());</span>
+        }
+    }
+
+    @Override
+    public double getDouble(String name) throws JMSException {
+<span class="fc" id="L157">        Object value = getObject(name);</span>
+
+<span class="fc bfc" id="L159" title="All 2 branches covered.">        if (value instanceof Double) {</span>
+<span class="fc" id="L160">            return ((Double) value).doubleValue();</span>
+<span class="fc bfc" id="L161" title="All 2 branches covered.">        } else if (value instanceof Float) {</span>
+<span class="fc" id="L162">            return ((Float) value).floatValue();</span>
+<span class="fc bfc" id="L163" title="All 4 branches covered.">        } else if (value instanceof String || value == null) {</span>
+<span class="fc" id="L164">            return Double.valueOf((String) value).doubleValue();</span>
+        } else {
+<span class="fc" id="L166">            throw new MessageFormatException(&quot;Cannot read a double from &quot; + value.getClass().getSimpleName());</span>
+        }
+    }
+
+    @Override
+    public String getString(String name) throws JMSException {
+<span class="fc" id="L172">        Object value = getObject(name);</span>
+
+<span class="fc bfc" id="L174" title="All 2 branches covered.">        if (value == null) {</span>
+<span class="fc" id="L175">            return null;</span>
+<span class="fc bfc" id="L176" title="All 2 branches covered.">        } else if (value instanceof byte[]) {</span>
+<span class="fc" id="L177">            throw new MessageFormatException(&quot;Use getBytes to read a byte array&quot;);</span>
+        } else {
+<span class="fc" id="L179">            return value.toString();</span>
+        }
+    }
+
+    @Override
+    public byte[] getBytes(String name) throws JMSException {
+<span class="fc" id="L185">        Object value = getObject(name);</span>
+
+<span class="fc bfc" id="L187" title="All 2 branches covered.">        if (value == null) {</span>
+<span class="fc" id="L188">            return null;</span>
+<span class="fc bfc" id="L189" title="All 2 branches covered.">        } else if (value instanceof byte[]) {</span>
+<span class="fc" id="L190">            byte[] original = (byte[]) value;</span>
+<span class="fc" id="L191">            byte[] clone = new byte[original.length];</span>
+<span class="fc" id="L192">            System.arraycopy(original, 0, clone, 0, original.length);</span>
+<span class="fc" id="L193">            return clone;</span>
+        } else {
+<span class="fc" id="L195">            throw new MessageFormatException(&quot;Cannot read a byte[] from &quot; + value.getClass().getSimpleName());</span>
+        }
+    }
+
+    @Override
+    public Object getObject(String name) throws JMSException {
+<span class="fc" id="L201">        checkKeyNameIsValid(name);</span>
+<span class="fc" id="L202">        return facade.get(name);</span>
+    }
+
+    @Override
+    public Enumeration&lt;String&gt; getMapNames() throws JMSException {
+<span class="fc" id="L207">        return facade.getMapNames();</span>
+    }
+
+    @Override
+    public void setBoolean(String name, boolean value) throws JMSException {
+<span class="fc bfc" id="L212" title="All 2 branches covered.">        put(name, value ? Boolean.TRUE : Boolean.FALSE);</span>
+<span class="fc" id="L213">    }</span>
+
+    @Override
+    public void setByte(String name, byte value) throws JMSException {
+<span class="fc" id="L217">        put(name, Byte.valueOf(value));</span>
+<span class="fc" id="L218">    }</span>
+
+    @Override
+    public void setShort(String name, short value) throws JMSException {
+<span class="fc" id="L222">        put(name, Short.valueOf(value));</span>
+<span class="fc" id="L223">    }</span>
+
+    @Override
+    public void setChar(String name, char value) throws JMSException {
+<span class="fc" id="L227">        put(name, Character.valueOf(value));</span>
+<span class="fc" id="L228">    }</span>
+
+    @Override
+    public void setInt(String name, int value) throws JMSException {
+<span class="fc" id="L232">        put(name, Integer.valueOf(value));</span>
+<span class="fc" id="L233">    }</span>
+
+    @Override
+    public void setLong(String name, long value) throws JMSException {
+<span class="fc" id="L237">        put(name, Long.valueOf(value));</span>
+<span class="fc" id="L238">    }</span>
+
+    @Override
+    public void setFloat(String name, float value) throws JMSException {
+<span class="fc" id="L242">        checkReadOnlyBody();</span>
+<span class="fc" id="L243">        put(name, new Float(value));</span>
+<span class="fc" id="L244">    }</span>
+
+    @Override
+    public void setDouble(String name, double value) throws JMSException {
+<span class="fc" id="L248">        put(name, new Double(value));</span>
+<span class="fc" id="L249">    }</span>
+
+    @Override
+    public void setString(String name, String value) throws JMSException {
+<span class="fc" id="L253">        put(name, value);</span>
+<span class="fc" id="L254">    }</span>
+
+    @Override
+    public void setBytes(String name, byte[] value) throws JMSException {
+<span class="fc bfc" id="L258" title="All 2 branches covered.">        setBytes(name, value, 0, (value != null ? value.length : 0));</span>
+<span class="fc" id="L259">    }</span>
+
+    @Override
+    public void setBytes(String name, byte[] value, int offset, int length) throws JMSException {
+        // Fail early to avoid unnecessary array copy.
+<span class="fc" id="L264">        checkReadOnlyBody();</span>
+<span class="fc" id="L265">        checkKeyNameIsValid(name);</span>
+
+<span class="fc" id="L267">        byte[] clone = null;</span>
+<span class="fc bfc" id="L268" title="All 2 branches covered.">        if (value != null) {</span>
+<span class="fc" id="L269">            clone = new byte[length];</span>
+<span class="fc" id="L270">            System.arraycopy(value, offset, clone, 0, length);</span>
+        }
+
+<span class="fc" id="L273">        put(name, clone);</span>
+<span class="fc" id="L274">    }</span>
+
+    @Override
+    public void setObject(String name, Object value) throws JMSException {
+        // byte[] not allowed on properties so cover that here.
+<span class="fc bfc" id="L279" title="All 2 branches covered.">        if (!(value instanceof byte[])) {</span>
+<span class="fc" id="L280">            checkValidObject(value);</span>
+        }
+
+<span class="fc" id="L283">        put(name, value);</span>
+<span class="fc" id="L284">    }</span>
+
+    /**
+     * Indicates whether an item exists in this &lt;CODE&gt;MapMessage&lt;/CODE&gt; object.
+     *
+     * @param name
+     *        the name of the item to test
+     * @return true if the item exists
+     * @throws JMSException
+     *         if the JMS provider fails to determine if the item exists due to
+     *         some internal error.
+     */
+    @Override
+    public boolean itemExists(String name) throws JMSException {
+<span class="fc" id="L298">        return facade.itemExists(name);</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L303">        return &quot;JmsMapMessage { &quot; + facade + &quot; }&quot;;</span>
+    }
+
+    private void put(String name, Object value) throws JMSException {
+<span class="fc" id="L307">        checkReadOnlyBody();</span>
+<span class="fc" id="L308">        checkKeyNameIsValid(name);</span>
+<span class="fc" id="L309">        facade.put(name, value);</span>
+<span class="fc" id="L310">    }</span>
+
+    private void checkKeyNameIsValid(String name) throws IllegalArgumentException {
+<span class="fc bfc" id="L313" title="All 2 branches covered.">        if (name == null) {</span>
+<span class="fc" id="L314">            throw new IllegalArgumentException(&quot;Map key name must not be null&quot;);</span>
+<span class="fc bfc" id="L315" title="All 2 branches covered.">        } else if (name.length() == 0) {</span>
+<span class="fc" id="L316">            throw new IllegalArgumentException(&quot;Map key name must not be the empty string&quot;);</span>
+        }
+<span class="fc" id="L318">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

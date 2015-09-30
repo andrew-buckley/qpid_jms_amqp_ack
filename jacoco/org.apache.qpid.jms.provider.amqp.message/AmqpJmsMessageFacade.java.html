@@ -1,0 +1,899 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpJmsMessageFacade.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp.message</a> &gt; <span class="el_source">AmqpJmsMessageFacade.java</span></div><h1>AmqpJmsMessageFacade.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp.message;
+
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_AMQP_TTL;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_MESSAGE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_MSG_TYPE;
+
+import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
+import java.util.Arrays;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+
+import javax.jms.JMSException;
+import javax.jms.MessageFormatException;
+
+import org.apache.qpid.jms.JmsDestination;
+import org.apache.qpid.jms.exceptions.IdConversionException;
+import org.apache.qpid.jms.message.facade.JmsMessageFacade;
+import org.apache.qpid.jms.provider.amqp.AmqpConnection;
+import org.apache.qpid.jms.provider.amqp.AmqpConsumer;
+import org.apache.qpid.proton.Proton;
+import org.apache.qpid.proton.amqp.Binary;
+import org.apache.qpid.proton.amqp.Symbol;
+import org.apache.qpid.proton.amqp.UnsignedByte;
+import org.apache.qpid.proton.amqp.UnsignedInteger;
+import org.apache.qpid.proton.amqp.messaging.ApplicationProperties;
+import org.apache.qpid.proton.amqp.messaging.Footer;
+import org.apache.qpid.proton.amqp.messaging.Header;
+import org.apache.qpid.proton.amqp.messaging.MessageAnnotations;
+import org.apache.qpid.proton.amqp.messaging.Properties;
+import org.apache.qpid.proton.message.Message;
+
+/**
+ *
+ */
+public class AmqpJmsMessageFacade implements JmsMessageFacade {
+
+    private static final int DEFAULT_PRIORITY = javax.jms.Message.DEFAULT_PRIORITY;
+<span class="fc" id="L57">    private static final Charset UTF8 = Charset.forName(&quot;UTF-8&quot;);</span>
+    private static final long UINT_MAX = 0xFFFFFFFFL;
+
+    protected final Message message;
+    protected final AmqpConnection connection;
+
+    private Map&lt;Symbol,Object&gt; messageAnnotationsMap;
+    private Map&lt;String,Object&gt; applicationPropertiesMap;
+
+    private JmsDestination replyTo;
+    private JmsDestination destination;
+    private JmsDestination consumerDestination;
+
+    private Long syntheticExpiration;
+
+    /**
+     * Used to record the value of JMS_AMQP_TTL property
+     * if it is explicitly set by the application
+     */
+<span class="fc" id="L76">    private Long userSpecifiedTTL = null;</span>
+
+    /**
+     * Create a new AMQP Message Facade with an empty message instance.
+     *
+     * @param connection
+     *        the AmqpConnection that under which this facade was created.
+     */
+<span class="fc" id="L84">    public AmqpJmsMessageFacade(AmqpConnection connection) {</span>
+<span class="fc" id="L85">        this.message = Proton.message();</span>
+<span class="fc" id="L86">        this.message.setDurable(true);</span>
+
+<span class="fc" id="L88">        this.connection = connection;</span>
+<span class="fc" id="L89">        setMessageAnnotation(JMS_MSG_TYPE, JMS_MESSAGE);</span>
+<span class="fc" id="L90">    }</span>
+
+    /**
+     * Creates a new Facade around an incoming AMQP Message for dispatch to the
+     * JMS Consumer instance.
+     *
+     * @param consumer
+     *        the consumer that received this message.
+     * @param message
+     *        the incoming Message instance that is being wrapped.
+     */
+    @SuppressWarnings(&quot;unchecked&quot;)
+<span class="fc" id="L102">    public AmqpJmsMessageFacade(AmqpConsumer consumer, Message message) {</span>
+<span class="fc" id="L103">        this.message = message;</span>
+<span class="fc" id="L104">        this.connection = consumer.getConnection();</span>
+<span class="fc" id="L105">        this.consumerDestination = consumer.getDestination();</span>
+
+<span class="fc bfc" id="L107" title="All 2 branches covered.">        if (message.getMessageAnnotations() != null) {</span>
+<span class="fc" id="L108">            messageAnnotationsMap = message.getMessageAnnotations().getValue();</span>
+        }
+
+<span class="fc bfc" id="L111" title="All 2 branches covered.">        if (message.getApplicationProperties() != null) {</span>
+<span class="fc" id="L112">            applicationPropertiesMap = message.getApplicationProperties().getValue();</span>
+        }
+
+<span class="fc" id="L115">        Long ttl = getTtl();</span>
+<span class="fc" id="L116">        Long absoluteExpiryTime = getAbsoluteExpiryTime();</span>
+<span class="fc bfc" id="L117" title="All 4 branches covered.">        if (absoluteExpiryTime == null &amp;&amp; ttl != null) {</span>
+<span class="fc" id="L118">            syntheticExpiration = System.currentTimeMillis() + ttl;</span>
+        }
+<span class="fc" id="L120">    }</span>
+
+    /**
+     * @return the appropriate byte value that indicates the type of message this is.
+     */
+    public byte getJmsMsgType() {
+<span class="fc" id="L126">        return JMS_MESSAGE;</span>
+    }
+
+    /**
+     * The annotation value for the JMS Message content type.  For a generic JMS message this
+     * value is omitted so we return null here, subclasses should override this to return the
+     * correct content type value for their payload.
+     *
+     * @return a String value indicating the message content type.
+     */
+    public String getContentType() {
+<span class="fc" id="L137">        return message.getContentType();</span>
+    }
+
+    public void setContentType(String value) {
+<span class="fc" id="L141">        message.setContentType(value);</span>
+<span class="fc" id="L142">    }</span>
+
+    @Override
+    public boolean propertyExists(String key) throws JMSException {
+<span class="fc" id="L146">        return AmqpJmsMessagePropertyIntercepter.propertyExists(this, key);</span>
+    }
+
+    public boolean applicationPropertyExists(String key) throws JMSException {
+<span class="fc bfc" id="L150" title="All 2 branches covered.">        if (applicationPropertiesMap != null) {</span>
+<span class="fc" id="L151">            return applicationPropertiesMap.containsKey(key);</span>
+        }
+
+<span class="fc" id="L154">        return false;</span>
+    }
+
+    /**
+     * Returns a set of all the property names that have been set in this message.
+     * The Set returned may be manipulated by the receiver without impacting the facade,
+     * and an empty set will be returned if there are no matching properties.
+     *
+     * @return a set of property names in the message or an empty set if none are set.
+     */
+    @Override
+    public Set&lt;String&gt; getPropertyNames() {
+<span class="fc" id="L166">        return AmqpJmsMessagePropertyIntercepter.getPropertyNames(this);</span>
+    }
+
+    public Set&lt;String&gt; getApplicationPropertyNames(Set&lt;String&gt; propertyNames) {
+<span class="fc bfc" id="L170" title="All 2 branches covered.">        if (applicationPropertiesMap != null) {</span>
+<span class="fc" id="L171">            propertyNames.addAll(applicationPropertiesMap.keySet());</span>
+        }
+
+<span class="fc" id="L174">        return propertyNames;</span>
+    }
+
+    @Override
+    public Object getProperty(String key) throws JMSException {
+<span class="fc" id="L179">        return AmqpJmsMessagePropertyIntercepter.getProperty(this, key);</span>
+    }
+
+    public Object getApplicationProperty(String key) throws JMSException {
+<span class="fc bfc" id="L183" title="All 2 branches covered.">        if (applicationPropertiesMap != null) {</span>
+<span class="fc" id="L184">            return applicationPropertiesMap.get(key);</span>
+        }
+
+<span class="fc" id="L187">        return null;</span>
+    }
+
+    @Override
+    public void setProperty(String key, Object value) throws JMSException {
+<span class="fc bfc" id="L192" title="All 2 branches covered.">        if (key == null) {</span>
+<span class="fc" id="L193">            throw new IllegalArgumentException(&quot;Property key must not be null&quot;);</span>
+        }
+
+<span class="fc" id="L196">        AmqpJmsMessagePropertyIntercepter.setProperty(this, key, value);</span>
+<span class="fc" id="L197">    }</span>
+
+    public void setApplicationProperty(String key, Object value) throws JMSException {
+<span class="fc" id="L200">        lazyCreateApplicationProperties();</span>
+<span class="fc" id="L201">        applicationPropertiesMap.put(key, value);</span>
+<span class="fc" id="L202">    }</span>
+
+    @Override
+    public void onSend(boolean disableMsgId, boolean disableTimestamp, long producerTtl) throws JMSException {
+
+        // Set the ttl field of the Header field if needed, complementing the expiration
+        // field of Properties for any peers that only inspect the mutable ttl field.
+<span class="fc" id="L209">        long ttl = 0;</span>
+<span class="fc bfc" id="L210" title="All 2 branches covered.">        if (hasAmqpTimeToLiveOverride()) {</span>
+<span class="fc" id="L211">            ttl = getAmqpTimeToLiveOverride();</span>
+        } else {
+<span class="fc" id="L213">            ttl = producerTtl;</span>
+        }
+
+<span class="pc bpc" id="L216" title="1 of 4 branches missed.">        if (ttl &gt; 0 &amp;&amp; ttl &lt; UINT_MAX) {</span>
+<span class="fc" id="L217">            message.setTtl(ttl);</span>
+        } else {
+<span class="fc" id="L219">            Header hdr = message.getHeader();</span>
+<span class="fc bfc" id="L220" title="All 2 branches covered.">            if (hdr != null) {</span>
+<span class="fc" id="L221">                hdr.setTtl(null);</span>
+            }
+        }
+
+<span class="fc bfc" id="L225" title="All 2 branches covered.">        if (disableMsgId) {</span>
+<span class="fc" id="L226">            setMessageId(null);</span>
+        }
+
+<span class="fc bfc" id="L229" title="All 2 branches covered.">        if (disableTimestamp) {</span>
+<span class="fc" id="L230">            setTimestamp(0);</span>
+        }
+
+<span class="fc" id="L233">        setMessageAnnotation(JMS_MSG_TYPE, getJmsMsgType());</span>
+<span class="fc" id="L234">    }</span>
+
+    @Override
+    public void onDispatch() throws JMSException {
+<span class="fc" id="L238">    }</span>
+
+    @Override
+    public void clearBody() {
+<span class="fc" id="L242">        message.setBody(null);</span>
+<span class="fc" id="L243">    }</span>
+
+    @Override
+    public void clearProperties() throws JMSException {
+<span class="fc" id="L247">        AmqpJmsMessagePropertyIntercepter.clearProperties(this);</span>
+<span class="fc" id="L248">    }</span>
+
+    @Override
+    public AmqpJmsMessageFacade copy() throws JMSException {
+<span class="fc" id="L252">        AmqpJmsMessageFacade copy = new AmqpJmsMessageFacade(connection);</span>
+<span class="fc" id="L253">        copyInto(copy);</span>
+<span class="fc" id="L254">        return copy;</span>
+    }
+
+    @SuppressWarnings(&quot;unchecked&quot;)
+    protected void copyInto(AmqpJmsMessageFacade target) {
+<span class="fc bfc" id="L259" title="All 2 branches covered.">        if (consumerDestination != null) {</span>
+<span class="fc" id="L260">            target.consumerDestination = consumerDestination;</span>
+        }
+
+<span class="fc bfc" id="L263" title="All 2 branches covered.">        if (destination != null) {</span>
+<span class="fc" id="L264">            target.setDestination(destination);</span>
+        }
+
+<span class="fc bfc" id="L267" title="All 2 branches covered.">        if (replyTo != null) {</span>
+<span class="fc" id="L268">            target.setReplyTo(replyTo);</span>
+        }
+
+<span class="pc bpc" id="L271" title="1 of 2 branches missed.">        if (syntheticExpiration != null) {</span>
+<span class="nc" id="L272">            target.syntheticExpiration = syntheticExpiration;</span>
+        }
+
+<span class="fc bfc" id="L275" title="All 2 branches covered.">        if (userSpecifiedTTL != null) {</span>
+<span class="fc" id="L276">            target.userSpecifiedTTL = userSpecifiedTTL;</span>
+        }
+
+<span class="fc" id="L279">        Message targetMsg = target.getAmqpMessage();</span>
+
+<span class="fc bfc" id="L281" title="All 2 branches covered.">        if (message.getHeader() != null) {</span>
+<span class="fc" id="L282">            Header headers = new Header();</span>
+<span class="fc" id="L283">            headers.setDurable(message.getHeader().getDurable());</span>
+<span class="fc" id="L284">            headers.setPriority(message.getHeader().getPriority());</span>
+<span class="fc" id="L285">            headers.setTtl(message.getHeader().getTtl());</span>
+<span class="fc" id="L286">            headers.setFirstAcquirer(message.getHeader().getFirstAcquirer());</span>
+<span class="fc" id="L287">            headers.setDeliveryCount(message.getHeader().getDeliveryCount());</span>
+<span class="fc" id="L288">            targetMsg.setHeader(headers);</span>
+        }
+
+<span class="pc bpc" id="L291" title="3 of 4 branches missed.">        if (message.getFooter() != null &amp;&amp; message.getFooter().getValue() != null) {</span>
+<span class="nc" id="L292">            Map&lt;Object, Object&gt; newFooterMap = new HashMap&lt;Object, Object&gt;();</span>
+<span class="nc" id="L293">            newFooterMap.putAll(message.getFooter().getValue());</span>
+<span class="nc" id="L294">            targetMsg.setFooter(new Footer(newFooterMap));</span>
+        }
+
+<span class="fc bfc" id="L297" title="All 2 branches covered.">        if (message.getProperties() != null) {</span>
+<span class="fc" id="L298">            Properties properties = new Properties();</span>
+
+<span class="fc" id="L300">            properties.setMessageId(message.getProperties().getMessageId());</span>
+<span class="fc" id="L301">            properties.setUserId(message.getProperties().getUserId());</span>
+<span class="fc" id="L302">            properties.setTo(message.getProperties().getTo());</span>
+<span class="fc" id="L303">            properties.setSubject(message.getProperties().getSubject());</span>
+<span class="fc" id="L304">            properties.setReplyTo(message.getProperties().getReplyTo());</span>
+<span class="fc" id="L305">            properties.setCorrelationId(message.getProperties().getCorrelationId());</span>
+<span class="fc" id="L306">            properties.setContentType(message.getProperties().getContentType());</span>
+<span class="fc" id="L307">            properties.setContentEncoding(message.getProperties().getContentEncoding());</span>
+<span class="fc" id="L308">            properties.setAbsoluteExpiryTime(message.getProperties().getAbsoluteExpiryTime());</span>
+<span class="fc" id="L309">            properties.setCreationTime(message.getProperties().getCreationTime());</span>
+<span class="fc" id="L310">            properties.setGroupId(message.getProperties().getGroupId());</span>
+<span class="fc" id="L311">            properties.setGroupSequence(message.getProperties().getGroupSequence());</span>
+<span class="fc" id="L312">            properties.setReplyToGroupId(message.getProperties().getReplyToGroupId());</span>
+
+<span class="fc" id="L314">            targetMsg.setProperties(properties);</span>
+        }
+
+<span class="pc bpc" id="L317" title="3 of 4 branches missed.">        if (message.getDeliveryAnnotations() != null &amp;&amp; message.getDeliveryAnnotations().getValue() != null) {</span>
+<span class="nc" id="L318">            Map&lt;Symbol, Object&gt; newDeliveryAnnotations = new HashMap&lt;Symbol, Object&gt;();</span>
+<span class="nc" id="L319">            newDeliveryAnnotations.putAll(message.getDeliveryAnnotations().getValue());</span>
+<span class="nc" id="L320">            targetMsg.setFooter(new Footer(newDeliveryAnnotations));</span>
+        }
+
+<span class="fc bfc" id="L323" title="All 2 branches covered.">        if (applicationPropertiesMap != null) {</span>
+<span class="fc" id="L324">            target.lazyCreateApplicationProperties();</span>
+<span class="fc" id="L325">            target.applicationPropertiesMap.putAll(applicationPropertiesMap);</span>
+        }
+
+<span class="fc bfc" id="L328" title="All 2 branches covered.">        if (messageAnnotationsMap != null) {</span>
+<span class="fc" id="L329">            target.lazyCreateMessageAnnotations();</span>
+<span class="fc" id="L330">            target.messageAnnotationsMap.putAll(messageAnnotationsMap);</span>
+        }
+<span class="fc" id="L332">    }</span>
+
+    @Override
+    public String getMessageId() {
+<span class="fc" id="L336">        Object underlying = message.getMessageId();</span>
+<span class="fc" id="L337">        AmqpMessageIdHelper helper = AmqpMessageIdHelper.INSTANCE;</span>
+<span class="fc" id="L338">        String baseStringId = helper.toBaseMessageIdString(underlying);</span>
+
+        // Ensure the ID: prefix is present.
+        // TODO: should we always do this when non-null? AMQP JMS Mapping says never to send the &quot;ID:&quot; prefix.
+<span class="pc bpc" id="L342" title="1 of 4 branches missed.">        if (baseStringId != null &amp;&amp; !helper.hasMessageIdPrefix(baseStringId)) {</span>
+<span class="fc" id="L343">            baseStringId = AmqpMessageIdHelper.JMS_ID_PREFIX + baseStringId;</span>
+        }
+<span class="fc" id="L345">        return baseStringId;</span>
+    }
+
+    @Override
+    public Object getProviderMessageIdObject() {
+<span class="fc" id="L350">        return message.getMessageId();</span>
+    }
+
+    @Override
+    public void setMessageId(String messageId) {
+<span class="fc bfc" id="L355" title="All 2 branches covered.">        if (messageId == null) {</span>
+<span class="fc" id="L356">            message.setMessageId(null);</span>
+        } else {
+            // Remove the first 'ID:' prefix if present
+<span class="fc" id="L359">            String stripped = AmqpMessageIdHelper.INSTANCE.stripMessageIdPrefix(messageId);</span>
+<span class="fc" id="L360">            message.setMessageId(stripped);</span>
+        }
+<span class="fc" id="L362">    }</span>
+
+    @Override
+    public long getTimestamp() {
+<span class="fc bfc" id="L366" title="All 2 branches covered.">        if (message.getProperties() != null) {</span>
+<span class="fc" id="L367">            Date timestamp = message.getProperties().getCreationTime();</span>
+<span class="fc bfc" id="L368" title="All 2 branches covered.">            if (timestamp != null) {</span>
+<span class="fc" id="L369">                return timestamp.getTime();</span>
+            }
+        }
+
+<span class="fc" id="L373">        return 0L;</span>
+    }
+
+    @Override
+    public void setTimestamp(long timestamp) {
+<span class="fc bfc" id="L378" title="All 2 branches covered.">        if (timestamp != 0) {</span>
+<span class="fc" id="L379">            message.setCreationTime(timestamp);</span>
+        } else {
+<span class="fc bfc" id="L381" title="All 2 branches covered.">            if (message.getProperties() != null) {</span>
+<span class="fc" id="L382">                message.getProperties().setCreationTime(null);</span>
+            }
+        }
+<span class="fc" id="L385">    }</span>
+
+    @Override
+    public String getCorrelationId() {
+<span class="fc" id="L389">        AmqpMessageIdHelper messageIdHelper = AmqpMessageIdHelper.INSTANCE;</span>
+<span class="fc" id="L390">        String baseIdString = messageIdHelper.toBaseMessageIdString(message.getCorrelationId());</span>
+
+<span class="fc bfc" id="L392" title="All 2 branches covered.">        if (baseIdString == null) {</span>
+<span class="fc" id="L393">            return null;</span>
+        } else {
+<span class="fc" id="L395">            Object annotation = getMessageAnnotation(AmqpMessageSupport.JMS_APP_CORRELATION_ID);</span>
+<span class="fc" id="L396">            boolean appSpecific = Boolean.TRUE.equals(annotation);</span>
+
+<span class="fc bfc" id="L398" title="All 2 branches covered.">            if (appSpecific) {</span>
+<span class="fc" id="L399">                return baseIdString;</span>
+            } else {
+<span class="fc" id="L401">                return AmqpMessageIdHelper.JMS_ID_PREFIX + baseIdString;</span>
+            }
+        }
+    }
+
+    @Override
+    public void setCorrelationId(String correlationId) throws IdConversionException {
+<span class="fc" id="L408">        AmqpMessageIdHelper messageIdHelper = AmqpMessageIdHelper.INSTANCE;</span>
+<span class="fc" id="L409">        boolean appSpecific = false;</span>
+<span class="fc bfc" id="L410" title="All 2 branches covered.">        if (correlationId == null) {</span>
+<span class="fc" id="L411">            message.setCorrelationId(null);</span>
+        } else {
+<span class="fc" id="L413">            boolean hasMessageIdPrefix = messageIdHelper.hasMessageIdPrefix(correlationId);</span>
+<span class="fc bfc" id="L414" title="All 2 branches covered.">            if (!hasMessageIdPrefix) {</span>
+<span class="fc" id="L415">                appSpecific = true;</span>
+            }
+
+<span class="fc" id="L418">            String stripped = messageIdHelper.stripMessageIdPrefix(correlationId);</span>
+
+<span class="fc bfc" id="L420" title="All 2 branches covered.">            if (hasMessageIdPrefix) {</span>
+<span class="fc" id="L421">                Object idObject = messageIdHelper.toIdObject(stripped);</span>
+<span class="fc" id="L422">                message.setCorrelationId(idObject);</span>
+<span class="fc" id="L423">            } else {</span>
+<span class="fc" id="L424">                message.setCorrelationId(stripped);</span>
+            }
+        }
+
+<span class="fc bfc" id="L428" title="All 2 branches covered.">        if (appSpecific) {</span>
+<span class="fc" id="L429">            setMessageAnnotation(AmqpMessageSupport.JMS_APP_CORRELATION_ID, true);</span>
+        } else {
+<span class="fc" id="L431">            removeMessageAnnotation(AmqpMessageSupport.JMS_APP_CORRELATION_ID);</span>
+        }
+<span class="fc" id="L433">    }</span>
+
+    @Override
+    public byte[] getCorrelationIdBytes() throws JMSException {
+<span class="fc" id="L437">        Object correlationId = message.getCorrelationId();</span>
+<span class="fc bfc" id="L438" title="All 2 branches covered.">        if (correlationId == null) {</span>
+<span class="fc" id="L439">            return null;</span>
+<span class="pc bpc" id="L440" title="1 of 2 branches missed.">        } else if (correlationId instanceof Binary) {</span>
+<span class="fc" id="L441">            ByteBuffer dup = ((Binary) correlationId).asByteBuffer();</span>
+<span class="fc" id="L442">            byte[] bytes = new byte[dup.remaining()];</span>
+<span class="fc" id="L443">            dup.get(bytes);</span>
+<span class="fc" id="L444">            return bytes;</span>
+        } else {
+            // TODO - Do we need to throw here, or could we just stringify whatever is in
+            //        there and return the UTF-8 bytes?  This method is pretty useless so
+            //        maybe we just return something and let the user sort if out if they
+            //        really think they need this.
+<span class="nc" id="L450">            throw new JMSException(&quot;The underlying correlation-id is not binary and so can't be returned&quot;);</span>
+        }
+    }
+
+    @Override
+    public void setCorrelationIdBytes(byte[] correlationId) {
+<span class="fc" id="L456">        Binary binaryIdValue = null;</span>
+<span class="fc bfc" id="L457" title="All 2 branches covered.">        if (correlationId != null) {</span>
+<span class="fc" id="L458">            binaryIdValue = new Binary(Arrays.copyOf(correlationId, correlationId.length));</span>
+        }
+
+<span class="fc" id="L461">        message.setCorrelationId(binaryIdValue);</span>
+<span class="fc" id="L462">    }</span>
+
+    @Override
+    public boolean isPersistent() {
+<span class="fc" id="L466">        return message.isDurable();</span>
+    }
+
+    @Override
+    public void setPersistent(boolean value) {
+<span class="fc" id="L471">        this.message.setDurable(value);</span>
+<span class="fc" id="L472">    }</span>
+
+    @Override
+    public int getDeliveryCount() {
+<span class="fc" id="L476">        return getRedeliveryCount() + 1;</span>
+    }
+
+    @Override
+    public void setDeliveryCount(int deliveryCount) {
+<span class="fc" id="L481">        setRedeliveryCount(deliveryCount - 1);</span>
+<span class="fc" id="L482">    }</span>
+
+    // TODO - We can probably remove these set / get redelivery count and just use
+    //        the delivery count and is / set redelivered bits for the JMS mapping.
+    //
+    // possibly add an increment to make the consumer code more readable when doing
+    // a recover or rollback if we do local redeliveries.
+    //
+    //  public void incrementRedeliveryCount()
+
+    @Override
+    public int getRedeliveryCount() {
+<span class="fc bfc" id="L494" title="All 2 branches covered.">        if (message.getHeader() != null) {</span>
+<span class="fc" id="L495">            UnsignedInteger count = message.getHeader().getDeliveryCount();</span>
+<span class="fc bfc" id="L496" title="All 2 branches covered.">            if (count != null) {</span>
+<span class="fc" id="L497">                return count.intValue();</span>
+            }
+        }
+
+<span class="fc" id="L501">        return 0;</span>
+    }
+
+    @Override
+    public void setRedeliveryCount(int redeliveryCount) {
+<span class="fc bfc" id="L506" title="All 2 branches covered.">        if (redeliveryCount == 0) {</span>
+<span class="fc bfc" id="L507" title="All 2 branches covered.">            if (message.getHeader() != null) {</span>
+<span class="fc" id="L508">                message.getHeader().setDeliveryCount(null);</span>
+            }
+        } else {
+<span class="fc" id="L511">            message.setDeliveryCount(redeliveryCount);</span>
+        }
+<span class="fc" id="L513">    }</span>
+
+    @Override
+    public boolean isRedelivered() {
+<span class="fc bfc" id="L517" title="All 2 branches covered.">        return getRedeliveryCount() &gt; 0;</span>
+    }
+
+    @Override
+    public void setRedelivered(boolean redelivered) {
+<span class="fc bfc" id="L522" title="All 2 branches covered.">        if (redelivered) {</span>
+<span class="fc bfc" id="L523" title="All 2 branches covered.">            if (!isRedelivered()) {</span>
+<span class="fc" id="L524">                setRedeliveryCount(1);</span>
+            }
+        } else {
+<span class="fc bfc" id="L527" title="All 2 branches covered.">            if (isRedelivered()) {</span>
+<span class="fc" id="L528">                setRedeliveryCount(0);</span>
+            }
+        }
+<span class="fc" id="L531">    }</span>
+
+    @Override
+    public String getType() {
+<span class="fc" id="L535">        return message.getSubject();</span>
+    }
+
+    @Override
+    public void setType(String type) {
+<span class="fc bfc" id="L540" title="All 2 branches covered.">        if (type != null) {</span>
+<span class="fc" id="L541">            message.setSubject(type);</span>
+        } else {
+<span class="pc bpc" id="L543" title="1 of 2 branches missed.">            if (message.getProperties() != null) {</span>
+<span class="fc" id="L544">                message.getProperties().setSubject(null);</span>
+            }
+        }
+<span class="fc" id="L547">    }</span>
+
+    @Override
+    public int getPriority() {
+<span class="fc bfc" id="L551" title="All 2 branches covered.">        if (message.getHeader() != null) {</span>
+<span class="fc" id="L552">            UnsignedByte priority = message.getHeader().getPriority();</span>
+<span class="fc bfc" id="L553" title="All 2 branches covered.">            if (priority != null) {</span>
+<span class="fc" id="L554">                int scaled = priority.intValue();</span>
+<span class="fc bfc" id="L555" title="All 2 branches covered.">                if (scaled &gt; 9) {</span>
+<span class="fc" id="L556">                    scaled = 9;</span>
+                }
+
+<span class="fc" id="L559">                return scaled;</span>
+            }
+        }
+
+<span class="fc" id="L563">        return DEFAULT_PRIORITY;</span>
+    }
+
+    @Override
+    public void setPriority(int priority) {
+<span class="fc bfc" id="L568" title="All 2 branches covered.">        if (priority == DEFAULT_PRIORITY) {</span>
+<span class="fc bfc" id="L569" title="All 2 branches covered.">            if (message.getHeader() == null) {</span>
+<span class="fc" id="L570">                return;</span>
+            } else {
+<span class="fc" id="L572">                message.getHeader().setPriority(null);</span>
+            }
+        } else {
+<span class="fc" id="L575">            byte scaled = (byte) priority;</span>
+<span class="fc bfc" id="L576" title="All 2 branches covered.">            if (priority &lt; 0) {</span>
+<span class="fc" id="L577">                scaled = 0;</span>
+<span class="fc bfc" id="L578" title="All 2 branches covered.">            } else if (priority &gt; 9) {</span>
+<span class="fc" id="L579">                scaled = 9;</span>
+            }
+
+<span class="fc" id="L582">            message.setPriority(scaled);</span>
+        }
+<span class="fc" id="L584">    }</span>
+
+    @Override
+    public long getExpiration() {
+<span class="fc" id="L588">        Long absoluteExpiry = getAbsoluteExpiryTime();</span>
+<span class="fc bfc" id="L589" title="All 2 branches covered.">        if (absoluteExpiry != null) {</span>
+<span class="fc" id="L590">            return absoluteExpiry;</span>
+        }
+
+<span class="fc bfc" id="L593" title="All 2 branches covered.">        if (syntheticExpiration != null) {</span>
+<span class="fc" id="L594">            return syntheticExpiration;</span>
+        }
+
+<span class="fc" id="L597">        return 0;</span>
+    }
+
+    @Override
+    public void setExpiration(long expiration) {
+<span class="fc" id="L602">        syntheticExpiration = null;</span>
+
+<span class="fc bfc" id="L604" title="All 2 branches covered.">        if (expiration != 0) {</span>
+<span class="fc" id="L605">            setAbsoluteExpiryTime(expiration);</span>
+        } else {
+<span class="fc" id="L607">            setAbsoluteExpiryTime(null);</span>
+        }
+<span class="fc" id="L609">    }</span>
+
+    /**
+     * Sets a value which will be used to override any ttl value that may otherwise be set
+     * based on the expiration value when sending the underlying AMQP message. A value of 0
+     * means to clear the ttl field rather than set it to anything.
+     *
+     * @param ttl
+     *        the value to use, in range {@literal 0 &lt;= x &lt;= 2^32 - 1}
+     *
+     * @throws MessageFormatException
+     */
+    public void setAmqpTimeToLiveOverride(Long ttl) throws MessageFormatException {
+<span class="fc bfc" id="L622" title="All 2 branches covered.">        if (ttl != null) {</span>
+<span class="fc bfc" id="L623" title="All 4 branches covered.">            if (ttl &gt;= 0 &amp;&amp; ttl &lt;= UINT_MAX) {</span>
+<span class="fc" id="L624">                userSpecifiedTTL = ttl;</span>
+            } else {
+<span class="fc" id="L626">                throw new MessageFormatException(JMS_AMQP_TTL + &quot; must be a long with value in range 0 to 2^32 - 1&quot;);</span>
+            }
+        } else {
+<span class="fc" id="L629">            userSpecifiedTTL = null;</span>
+        }
+<span class="fc" id="L631">    }</span>
+
+    public boolean hasAmqpTimeToLiveOverride() {
+<span class="fc bfc" id="L634" title="All 2 branches covered.">        return userSpecifiedTTL != null;</span>
+    }
+
+    public long getAmqpTimeToLiveOverride() {
+<span class="fc bfc" id="L638" title="All 2 branches covered.">        return userSpecifiedTTL != null ? userSpecifiedTTL : 0;</span>
+    }
+
+    @Override
+    public JmsDestination getDestination() {
+<span class="fc bfc" id="L643" title="All 2 branches covered.">        if (destination == null) {</span>
+<span class="fc" id="L644">            this.destination = AmqpDestinationHelper.INSTANCE.getJmsDestination(this, consumerDestination);</span>
+        }
+
+<span class="fc" id="L647">        return destination;</span>
+    }
+
+    @Override
+    public void setDestination(JmsDestination destination) {
+<span class="fc" id="L652">        this.destination = destination;</span>
+<span class="fc" id="L653">        lazyCreateMessageAnnotations();</span>
+<span class="fc" id="L654">        AmqpDestinationHelper.INSTANCE.setToAddressFromDestination(this, destination);</span>
+<span class="fc" id="L655">    }</span>
+
+    @Override
+    public JmsDestination getReplyTo() {
+<span class="fc bfc" id="L659" title="All 2 branches covered.">        if (replyTo == null) {</span>
+<span class="fc" id="L660">            replyTo = AmqpDestinationHelper.INSTANCE.getJmsReplyTo(this, consumerDestination);</span>
+        }
+
+<span class="fc" id="L663">        return replyTo;</span>
+    }
+
+    @Override
+    public void setReplyTo(JmsDestination replyTo) {
+<span class="fc" id="L668">        this.replyTo = replyTo;</span>
+<span class="fc" id="L669">        lazyCreateMessageAnnotations();</span>
+<span class="fc" id="L670">        AmqpDestinationHelper.INSTANCE.setReplyToAddressFromDestination(this, replyTo);</span>
+<span class="fc" id="L671">    }</span>
+
+    public void setReplyToGroupId(String replyToGroupId) {
+<span class="fc" id="L674">        message.setReplyToGroupId(replyToGroupId);</span>
+<span class="fc" id="L675">    }</span>
+
+    public String getReplyToGroupId() {
+<span class="fc" id="L678">        return message.getReplyToGroupId();</span>
+    }
+
+    @Override
+    public String getUserId() {
+<span class="fc" id="L683">        String userId = null;</span>
+<span class="fc" id="L684">        byte[] userIdBytes = message.getUserId();</span>
+
+<span class="fc bfc" id="L686" title="All 2 branches covered.">        if (userIdBytes != null) {</span>
+<span class="fc" id="L687">            userId = new String(userIdBytes, UTF8);</span>
+        }
+
+<span class="fc" id="L690">        return userId;</span>
+    }
+
+    @Override
+    public void setUserId(String userId) {
+<span class="fc" id="L695">        byte[] bytes = null;</span>
+<span class="fc bfc" id="L696" title="All 2 branches covered.">        if (userId != null) {</span>
+<span class="fc" id="L697">            bytes = userId.getBytes(UTF8);</span>
+        }
+
+<span class="fc" id="L700">        message.setUserId(bytes);</span>
+<span class="fc" id="L701">    }</span>
+
+    @Override
+    public String getGroupId() {
+<span class="fc" id="L705">        return message.getGroupId();</span>
+    }
+
+    @Override
+    public void setGroupId(String groupId) {
+<span class="fc" id="L710">        message.setGroupId(groupId);</span>
+<span class="fc" id="L711">    }</span>
+
+    @Override
+    public int getGroupSequence() {
+<span class="fc bfc" id="L715" title="All 2 branches covered.">        if (message.getProperties() != null) {</span>
+<span class="fc" id="L716">            UnsignedInteger groupSeqUint = message.getProperties().getGroupSequence();</span>
+<span class="fc bfc" id="L717" title="All 2 branches covered.">            if (groupSeqUint != null) {</span>
+                // This wraps it into the negative int range if uint is over 2^31-1
+<span class="fc" id="L719">                return groupSeqUint.intValue();</span>
+            }
+        }
+
+<span class="fc" id="L723">        return 0;</span>
+    }
+
+    @Override
+    public void setGroupSequence(int groupSequence) {
+        // This wraps it into the upper uint range if a negative was provided
+<span class="fc bfc" id="L729" title="All 2 branches covered.">        if (groupSequence == 0) {</span>
+<span class="fc bfc" id="L730" title="All 2 branches covered.">            if (message.getProperties() != null) {</span>
+<span class="fc" id="L731">                message.getProperties().setGroupSequence(null);</span>
+            }
+        } else {
+<span class="fc" id="L734">            message.setGroupSequence(groupSequence);</span>
+        }
+<span class="fc" id="L736">    }</span>
+
+    /**
+     * @return the true AMQP Message instance wrapped by this Facade.
+     */
+    public Message getAmqpMessage() {
+<span class="fc" id="L742">        return this.message;</span>
+    }
+
+    /**
+     * The AmqpConnection instance that is associated with this Message.
+     * @return the connection
+     */
+    public AmqpConnection getConnection() {
+<span class="fc" id="L750">        return connection;</span>
+    }
+
+    /**
+     * Checks for the presence of a given message annotation and returns true
+     * if it is contained in the current annotations.  If the annotations have
+     * not yet been initialized then this method always returns false.
+     *
+     * @param key
+     *        the name of the annotation to query for.
+     *
+     * @return true if the annotation is present, false in not or annotations not initialized.
+     */
+    boolean messageAnnotationExists(String key) {
+<span class="fc bfc" id="L764" title="All 2 branches covered.">        if (messageAnnotationsMap == null) {</span>
+<span class="fc" id="L765">            return false;</span>
+        }
+
+<span class="fc" id="L768">        return messageAnnotationsMap.containsKey(AmqpMessageSupport.getSymbol(key));</span>
+    }
+
+    /**
+     * Given a message annotation name, lookup and return the value associated with
+     * that annotation name.  If the message annotations have not been created yet
+     * then this method will always return null.
+     *
+     * @param key
+     *        the Symbol name that should be looked up in the message annotations.
+     *
+     * @return the value of the annotation if it exists, or null if not set or not accessible.
+     */
+    Object getMessageAnnotation(String key) {
+<span class="fc bfc" id="L782" title="All 2 branches covered.">        if (messageAnnotationsMap == null) {</span>
+<span class="fc" id="L783">            return null;</span>
+        }
+
+<span class="fc" id="L786">        return messageAnnotationsMap.get(AmqpMessageSupport.getSymbol(key));</span>
+    }
+
+    /**
+     * Removes a message annotation if the message contains it.  Will not do
+     * a lazy create on the message annotations so caller cannot count on the
+     * existence of the message annotations after a call to this method.
+     *
+     * @param key
+     *        the annotation key that is to be removed from the current set.
+     */
+    void removeMessageAnnotation(String key) {
+<span class="fc bfc" id="L798" title="All 2 branches covered.">        if (messageAnnotationsMap == null) {</span>
+<span class="fc" id="L799">            return;</span>
+        }
+
+<span class="fc" id="L802">        messageAnnotationsMap.remove(AmqpMessageSupport.getSymbol(key));</span>
+<span class="fc" id="L803">    }</span>
+
+    /**
+     * Perform a proper annotation set on the AMQP Message based on a Symbol key and
+     * the target value to append to the current annotations.
+     *
+     * @param key
+     *        The name of the Symbol whose value is being set.
+     * @param value
+     *        The new value to set in the annotations of this message.
+     */
+    void setMessageAnnotation(String key, Object value) {
+<span class="fc" id="L815">        lazyCreateMessageAnnotations();</span>
+<span class="fc" id="L816">        messageAnnotationsMap.put(AmqpMessageSupport.getSymbol(key), value);</span>
+<span class="fc" id="L817">    }</span>
+
+    /**
+     * Removes all message annotations from this message.
+     */
+    void clearMessageAnnotations() {
+<span class="fc" id="L823">        messageAnnotationsMap = null;</span>
+<span class="fc" id="L824">        message.setMessageAnnotations(null);</span>
+<span class="fc" id="L825">    }</span>
+
+    /**
+     * Removes all application level properties from the Message.
+     */
+    void clearAllApplicationProperties() {
+<span class="fc" id="L831">        applicationPropertiesMap = null;</span>
+<span class="fc" id="L832">        message.setApplicationProperties(null);</span>
+<span class="fc" id="L833">    }</span>
+
+    String getToAddress() {
+<span class="fc" id="L836">        return message.getAddress();</span>
+    }
+
+    void setToAddress(String address) {
+<span class="fc" id="L840">        message.setAddress(address);</span>
+<span class="fc" id="L841">    }</span>
+
+    String getReplyToAddress() {
+<span class="fc" id="L844">        return message.getReplyTo();</span>
+    }
+
+    void setReplyToAddress(String address) {
+<span class="fc" id="L848">        this.message.setReplyTo(address);</span>
+<span class="fc" id="L849">    }</span>
+
+    private Long getAbsoluteExpiryTime() {
+<span class="fc" id="L852">        Long result = null;</span>
+<span class="fc bfc" id="L853" title="All 2 branches covered.">        if (message.getProperties() != null) {</span>
+<span class="fc" id="L854">            Date date = message.getProperties().getAbsoluteExpiryTime();</span>
+<span class="fc bfc" id="L855" title="All 2 branches covered.">            if (date != null) {</span>
+<span class="fc" id="L856">                result = date.getTime();</span>
+            }
+        }
+
+<span class="fc" id="L860">        return result;</span>
+    }
+
+    private Long getTtl() {
+<span class="fc" id="L864">        Long result = null;</span>
+<span class="fc bfc" id="L865" title="All 2 branches covered.">        if (message.getHeader() != null) {</span>
+<span class="fc" id="L866">            UnsignedInteger ttl = message.getHeader().getTtl();</span>
+<span class="fc bfc" id="L867" title="All 2 branches covered.">            if (ttl != null) {</span>
+<span class="fc" id="L868">                result = ttl.longValue();</span>
+            }
+        }
+
+<span class="fc" id="L872">        return result;</span>
+    }
+
+    private void setAbsoluteExpiryTime(Long expiration) {
+<span class="fc bfc" id="L876" title="All 2 branches covered.">        if (expiration == null) {</span>
+<span class="fc bfc" id="L877" title="All 2 branches covered.">            if (message.getProperties() != null) {</span>
+<span class="fc" id="L878">                message.getProperties().setAbsoluteExpiryTime(null);</span>
+            }
+        } else {
+<span class="fc" id="L881">            message.setExpiryTime(expiration);</span>
+        }
+<span class="fc" id="L883">    }</span>
+
+    private void lazyCreateMessageAnnotations() {
+<span class="fc bfc" id="L886" title="All 2 branches covered.">        if (messageAnnotationsMap == null) {</span>
+<span class="fc" id="L887">            messageAnnotationsMap = new HashMap&lt;Symbol,Object&gt;();</span>
+<span class="fc" id="L888">            message.setMessageAnnotations(new MessageAnnotations(messageAnnotationsMap));</span>
+        }
+<span class="fc" id="L890">    }</span>
+
+    private void lazyCreateApplicationProperties() {
+<span class="fc bfc" id="L893" title="All 2 branches covered.">        if (applicationPropertiesMap == null) {</span>
+<span class="fc" id="L894">            applicationPropertiesMap = new HashMap&lt;String, Object&gt;();</span>
+<span class="fc" id="L895">            message.setApplicationProperties(new ApplicationProperties(applicationPropertiesMap));</span>
+        }
+<span class="fc" id="L897">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

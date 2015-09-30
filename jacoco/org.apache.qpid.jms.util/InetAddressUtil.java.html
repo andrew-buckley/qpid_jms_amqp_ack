@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>InetAddressUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.util</a> &gt; <span class="el_source">InetAddressUtil.java</span></div><h1>InetAddressUtil.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.util;
+
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+
+<span class="nc" id="L22">public class InetAddressUtil {</span>
+
+    /**
+     * When using the {@link java.net.InetAddress#getHostName()} method in an
+     * environment where neither a proper DNS lookup nor an &lt;tt&gt;/etc/hosts&lt;/tt&gt;
+     * entry exists for a given host, the following exception will be thrown:
+     * &lt;code&gt;
+     * java.net.UnknownHostException: &amp;lt;hostname&amp;gt;: &amp;lt;hostname&amp;gt;
+     *  at java.net.InetAddress.getLocalHost(InetAddress.java:1425)
+     *   ...
+     * &lt;/code&gt;
+     * Instead of just throwing an UnknownHostException and giving up, this
+     * method grabs a suitable hostname from the exception and prevents the
+     * exception from being thrown. If a suitable hostname cannot be acquired
+     * from the exception, only then is the &lt;tt&gt;UnknownHostException&lt;/tt&gt; thrown.
+     *
+     * @return The hostname
+     * @throws UnknownHostException
+     * @see java.net.InetAddress#getLocalHost()
+     * @see java.net.InetAddress#getHostName()
+     */
+    public static String getLocalHostName() throws UnknownHostException {
+        try {
+<span class="fc" id="L45">            return (InetAddress.getLocalHost()).getHostName();</span>
+<span class="nc" id="L46">        } catch (UnknownHostException uhe) {</span>
+<span class="nc" id="L47">            String host = uhe.getMessage(); // host = &quot;hostname: hostname&quot;</span>
+<span class="nc bnc" id="L48" title="All 2 branches missed.">            if (host != null) {</span>
+<span class="nc" id="L49">                int colon = host.indexOf(':');</span>
+<span class="nc bnc" id="L50" title="All 2 branches missed.">                if (colon &gt; 0) {</span>
+<span class="nc" id="L51">                    return host.substring(0, colon);</span>
+                }
+            }
+<span class="nc" id="L54">            throw uhe;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpJmsMapMessageFacade.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp.message</a> &gt; <span class="el_source">AmqpJmsMapMessageFacade.java</span></div><h1>AmqpJmsMapMessageFacade.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp.message;
+
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_MAP_MESSAGE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_MSG_TYPE;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import org.apache.qpid.jms.message.facade.JmsMapMessageFacade;
+import org.apache.qpid.jms.provider.amqp.AmqpConnection;
+import org.apache.qpid.jms.provider.amqp.AmqpConsumer;
+import org.apache.qpid.proton.amqp.Binary;
+import org.apache.qpid.proton.amqp.messaging.AmqpValue;
+import org.apache.qpid.proton.amqp.messaging.Section;
+import org.apache.qpid.proton.message.Message;
+
+/**
+ * Wrapper around an AMQP Message instance that will be treated as a JMS MapMessage
+ * type.
+ */
+public class AmqpJmsMapMessageFacade extends AmqpJmsMessageFacade implements JmsMapMessageFacade {
+
+    private Map&lt;String,Object&gt; messageBodyMap;
+
+    /**
+     * Create a new facade ready for sending.
+     *
+     * @param connection
+     *        the AmqpConnection that under which this facade was created.
+     */
+    public AmqpJmsMapMessageFacade(AmqpConnection connection) {
+<span class="fc" id="L51">        super(connection);</span>
+<span class="fc" id="L52">        initializeEmptyBody();</span>
+<span class="fc" id="L53">        setMessageAnnotation(JMS_MSG_TYPE, JMS_MAP_MESSAGE);</span>
+<span class="fc" id="L54">    }</span>
+
+    /**
+     * Creates a new Facade around an incoming AMQP Message for dispatch to the
+     * JMS Consumer instance.
+     *
+     * @param consumer
+     *        the consumer that received this message.
+     * @param message
+     *        the incoming Message instance that is being wrapped.
+     */
+    @SuppressWarnings(&quot;unchecked&quot;)
+    public AmqpJmsMapMessageFacade(AmqpConsumer consumer, Message message) {
+<span class="fc" id="L67">        super(consumer, message);</span>
+
+<span class="fc" id="L69">        Section body = getAmqpMessage().getBody();</span>
+<span class="fc bfc" id="L70" title="All 2 branches covered.">        if (body == null) {</span>
+<span class="fc" id="L71">            initializeEmptyBody();</span>
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        } else if (body instanceof AmqpValue) {</span>
+<span class="fc" id="L73">            Object o = ((AmqpValue) body).getValue();</span>
+<span class="fc bfc" id="L74" title="All 2 branches covered.">            if (o == null) {</span>
+<span class="fc" id="L75">                initializeEmptyBody();</span>
+<span class="fc bfc" id="L76" title="All 2 branches covered.">            } else if (o instanceof Map) {</span>
+<span class="fc" id="L77">                messageBodyMap = (Map&lt;String, Object&gt;) o;</span>
+            } else {
+<span class="fc" id="L79">                throw new IllegalStateException(&quot;Unexpected message body type: &quot; + body.getClass().getSimpleName());</span>
+            }
+<span class="fc" id="L81">        } else {</span>
+<span class="fc" id="L82">            throw new IllegalStateException(&quot;Unexpected message body type: &quot; + body.getClass().getSimpleName());</span>
+        }
+<span class="fc" id="L84">    }</span>
+
+    /**
+     * @return the appropriate byte value that indicates the type of message this is.
+     */
+    @Override
+    public byte getJmsMsgType() {
+<span class="fc" id="L91">        return JMS_MAP_MESSAGE;</span>
+    }
+
+    @Override
+    public AmqpJmsMapMessageFacade copy() {
+<span class="fc" id="L96">        AmqpJmsMapMessageFacade copy = new AmqpJmsMapMessageFacade(connection);</span>
+<span class="fc" id="L97">        copyInto(copy);</span>
+<span class="fc" id="L98">        copy.messageBodyMap.putAll(messageBodyMap);</span>
+<span class="fc" id="L99">        return copy;</span>
+    }
+
+    @Override
+    public Enumeration&lt;String&gt; getMapNames() {
+<span class="fc" id="L104">        return Collections.enumeration(messageBodyMap.keySet());</span>
+    }
+
+    @Override
+    public boolean itemExists(String key) {
+<span class="fc" id="L109">        return messageBodyMap.containsKey(key);</span>
+    }
+
+    @Override
+    public Object get(String key) {
+<span class="fc" id="L114">        Object value = messageBodyMap.get(key);</span>
+<span class="fc bfc" id="L115" title="All 2 branches covered.">        if (value instanceof Binary) {</span>
+            // Copy to a byte[], ensure we copy only the required portion.
+<span class="fc" id="L117">            Binary bin = ((Binary) value);</span>
+<span class="fc" id="L118">            value = Arrays.copyOfRange(bin.getArray(), bin.getArrayOffset(), bin.getLength());</span>
+        }
+
+<span class="fc" id="L121">        return value;</span>
+    }
+
+    @Override
+    public void put(String key, Object value) {
+<span class="fc" id="L126">        Object entry = value;</span>
+<span class="fc bfc" id="L127" title="All 2 branches covered.">        if (value instanceof byte[]) {</span>
+<span class="fc" id="L128">            entry = new Binary((byte[]) value);</span>
+        }
+
+<span class="fc" id="L131">        messageBodyMap.put(key, entry);</span>
+<span class="fc" id="L132">    }</span>
+
+    @Override
+    public Object remove(String key) {
+<span class="fc" id="L136">        return messageBodyMap.remove(key);</span>
+    }
+
+    @Override
+    public void clearBody() {
+<span class="fc" id="L141">        messageBodyMap.clear();</span>
+<span class="fc" id="L142">    }</span>
+
+    private void initializeEmptyBody() {
+        // Using LinkedHashMap because AMQP map equality considers order,
+        // so we should behave in as predictable a manner as possible
+<span class="fc" id="L147">        messageBodyMap = new LinkedHashMap&lt;String, Object&gt;();</span>
+<span class="fc" id="L148">        getAmqpMessage().setBody(new AmqpValue(messageBodyMap));</span>
+<span class="fc" id="L149">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

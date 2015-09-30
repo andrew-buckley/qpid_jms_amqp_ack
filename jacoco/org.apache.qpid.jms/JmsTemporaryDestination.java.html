@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>JmsTemporaryDestination.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms</a> &gt; <span class="el_source">JmsTemporaryDestination.java</span></div><h1>JmsTemporaryDestination.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms;
+
+import javax.jms.JMSException;
+
+import org.apache.qpid.jms.meta.JmsResource;
+import org.apache.qpid.jms.meta.JmsResourceVistor;
+
+/**
+ * Temporary Destination Object
+ */
+public abstract class JmsTemporaryDestination extends JmsDestination implements JmsResource {
+
+    private boolean deleted;
+
+    public JmsTemporaryDestination() {
+<span class="nc" id="L32">        this(null, false);</span>
+<span class="nc" id="L33">    }</span>
+
+    public JmsTemporaryDestination(String name, boolean topic) {
+<span class="fc" id="L36">        super(name, topic, true);</span>
+<span class="fc" id="L37">    }</span>
+
+    void setConnection(JmsConnection connection) {
+<span class="fc" id="L40">        this.connection = connection;</span>
+<span class="fc" id="L41">    }</span>
+
+    JmsConnection getConnection() {
+<span class="fc" id="L44">        return this.connection;</span>
+    }
+
+    /**
+     * Attempts to delete the destination if there is an assigned Connection object.
+     *
+     * @throws JMSException if an error occurs or the provider doesn't support
+     *         delete of destinations from the client.
+     */
+    protected void tryDelete() throws JMSException {
+<span class="fc bfc" id="L54" title="All 2 branches covered.">        if (connection != null) {</span>
+<span class="fc" id="L55">            connection.deleteTemporaryDestination(this);</span>
+        }
+
+<span class="fc" id="L58">        deleted = true;</span>
+<span class="fc" id="L59">    }</span>
+
+    protected boolean isDeleted() throws JMSException {
+<span class="fc" id="L62">        boolean result = deleted;</span>
+
+<span class="fc bfc" id="L64" title="All 4 branches covered.">        if (!result &amp;&amp; connection != null) {</span>
+<span class="fc" id="L65">            result = connection.isTemporaryDestinationDeleted(this);</span>
+        }
+
+<span class="fc" id="L68">        return result;</span>
+    }
+
+    @Override
+    public void visit(JmsResourceVistor visitor) throws Exception {
+<span class="fc" id="L73">        visitor.processDestination(this);</span>
+<span class="fc" id="L74">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

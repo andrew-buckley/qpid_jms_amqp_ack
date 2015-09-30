@@ -1,0 +1,322 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpDestinationHelper.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp.message</a> &gt; <span class="el_source">AmqpDestinationHelper.java</span></div><h1>AmqpDestinationHelper.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp.message;
+
+import java.util.HashSet;
+import java.util.Set;
+
+import org.apache.qpid.jms.JmsDestination;
+import org.apache.qpid.jms.JmsQueue;
+import org.apache.qpid.jms.JmsTemporaryQueue;
+import org.apache.qpid.jms.JmsTemporaryTopic;
+import org.apache.qpid.jms.JmsTopic;
+import org.apache.qpid.jms.provider.amqp.AmqpConnection;
+import org.apache.qpid.proton.amqp.Symbol;
+
+/**
+ * A set of static utility method useful when mapping JmsDestination types to / from the AMQP
+ * destination fields in a Message that's being sent or received.
+ */
+<span class="fc" id="L34">public class AmqpDestinationHelper {</span>
+<span class="fc" id="L35">    public static final AmqpDestinationHelper INSTANCE = new AmqpDestinationHelper();</span>
+
+    public static final String JMS_DEST_TYPE_MSG_ANNOTATION_SYMBOL_NAME = &quot;x-opt-jms-dest&quot;;
+    public static final String JMS_REPLY_TO_TYPE_MSG_ANNOTATION_SYMBOL_NAME = &quot;x-opt-jms-reply-to&quot;;
+    public static final byte QUEUE_TYPE = 0x00;
+    public static final byte TOPIC_TYPE = 0x01;
+    public static final byte TEMP_QUEUE_TYPE = 0x02;
+    public static final byte TEMP_TOPIC_TYPE = 0x03;
+<span class="fc" id="L43">    public static final Symbol QUEUE_CAPABILITY = Symbol.valueOf(&quot;queue&quot;);</span>
+<span class="fc" id="L44">    public static final Symbol TOPIC_CAPABILITY = Symbol.valueOf(&quot;topic&quot;);</span>
+<span class="fc" id="L45">    public static final Symbol TEMP_QUEUE_CAPABILITY = Symbol.valueOf(&quot;temporary-queue&quot;);</span>
+<span class="fc" id="L46">    public static final Symbol TEMP_TOPIC_CAPABILITY = Symbol.valueOf(&quot;temporary-topic&quot;);</span>
+    private static final byte UNKNOWN_TYPE = -1;
+
+    /**
+     * Decode the provided To address, type description, and consumer destination
+     * information such that an appropriate Destination object can be returned.
+     *
+     * If an address and type description is provided then this will be used to
+     * create the Destination. If the type information is missing, it will be
+     * derived from the consumer destination if present, or default to a queue
+     * destination if not.
+     *
+     * If the address is null then the consumer destination is returned, unless
+     * the useConsumerDestForTypeOnly flag is true, in which case null will be
+     * returned.
+     */
+    public JmsDestination getJmsDestination(AmqpJmsMessageFacade message, JmsDestination consumerDestination) {
+<span class="fc" id="L63">        String to = message.getToAddress();</span>
+<span class="fc" id="L64">        byte typeByte = getTypeByte(message, JMS_DEST_TYPE_MSG_ANNOTATION_SYMBOL_NAME);</span>
+<span class="fc bfc" id="L65" title="All 2 branches covered.">        if (typeByte == UNKNOWN_TYPE) {</span>
+            // Try the legacy string type annotation
+<span class="fc" id="L67">            typeByte = getTypeByte(message, AmqpMessageSupport.LEGACY_TO_TYPE_MSG_ANNOTATION_SYMBOL_NAME);</span>
+        }
+
+<span class="fc" id="L70">        String name = stripPrefixIfNecessary(to, message.getConnection(), typeByte, consumerDestination);</span>
+
+<span class="fc" id="L72">        return createDestination(name, typeByte, consumerDestination, false);</span>
+    }
+
+    public JmsDestination getJmsReplyTo(AmqpJmsMessageFacade message, JmsDestination consumerDestination) {
+<span class="fc" id="L76">        String replyTo = message.getReplyToAddress();</span>
+<span class="fc" id="L77">        byte typeByte = getTypeByte(message, JMS_REPLY_TO_TYPE_MSG_ANNOTATION_SYMBOL_NAME);</span>
+<span class="fc bfc" id="L78" title="All 2 branches covered.">        if (typeByte == UNKNOWN_TYPE) {</span>
+            // Try the legacy string type annotation
+<span class="fc" id="L80">            typeByte = getTypeByte(message, AmqpMessageSupport.LEGACY_REPLY_TO_TYPE_MSG_ANNOTATION_SYMBOL_NAME);</span>
+        }
+
+<span class="fc" id="L83">        String name = stripPrefixIfNecessary(replyTo, message.getConnection(), typeByte, consumerDestination);</span>
+
+<span class="fc" id="L85">        return createDestination(name, typeByte, consumerDestination, true);</span>
+    }
+
+    private String stripPrefixIfNecessary(String address, AmqpConnection conn, byte typeByte, JmsDestination consumerDestination) {
+<span class="fc bfc" id="L89" title="All 2 branches covered.">        if (address == null) {</span>
+<span class="fc" id="L90">            return null;</span>
+        }
+
+<span class="fc bfc" id="L93" title="All 2 branches covered.">        if (typeByte == UNKNOWN_TYPE) {</span>
+<span class="fc" id="L94">            String queuePrefix = conn.getQueuePrefix();</span>
+<span class="pc bpc" id="L95" title="1 of 4 branches missed.">            if (queuePrefix != null &amp;&amp; address.startsWith(queuePrefix)) {</span>
+<span class="fc" id="L96">                return address.substring(queuePrefix.length());</span>
+            }
+
+<span class="fc" id="L99">            String topicPrefix = conn.getTopicPrefix();</span>
+<span class="pc bpc" id="L100" title="1 of 4 branches missed.">            if (topicPrefix != null &amp;&amp; address.startsWith(topicPrefix)) {</span>
+<span class="fc" id="L101">                return address.substring(topicPrefix.length());</span>
+            }
+<span class="fc bfc" id="L103" title="All 2 branches covered.">        } else if (typeByte == QUEUE_TYPE) {</span>
+<span class="fc" id="L104">            String queuePrefix = conn.getQueuePrefix();</span>
+<span class="pc bpc" id="L105" title="1 of 4 branches missed.">            if (queuePrefix != null &amp;&amp; address.startsWith(queuePrefix)) {</span>
+<span class="fc" id="L106">                return address.substring(queuePrefix.length());</span>
+            }
+<span class="fc bfc" id="L108" title="All 2 branches covered.">        } else if (typeByte == TOPIC_TYPE) {</span>
+<span class="fc" id="L109">            String topicPrefix = conn.getTopicPrefix();</span>
+<span class="pc bpc" id="L110" title="1 of 4 branches missed.">            if (topicPrefix != null &amp;&amp; address.startsWith(topicPrefix)) {</span>
+<span class="fc" id="L111">                return address.substring(topicPrefix.length());</span>
+            }
+        }
+
+<span class="fc" id="L115">        return address;</span>
+    }
+
+    private JmsDestination createDestination(String address, byte typeByte, JmsDestination consumerDestination, boolean useConsumerDestForTypeOnly) {
+<span class="fc bfc" id="L119" title="All 2 branches covered.">        if (address == null) {</span>
+<span class="fc bfc" id="L120" title="All 2 branches covered.">            return useConsumerDestForTypeOnly ? null : consumerDestination;</span>
+        }
+
+<span class="fc bfc" id="L123" title="All 2 branches covered.">        if (typeByte != UNKNOWN_TYPE) {</span>
+<span class="fc bfc" id="L124" title="All 5 branches covered.">            switch (typeByte) {</span>
+            case QUEUE_TYPE:
+<span class="fc" id="L126">                return new JmsQueue(address);</span>
+            case TOPIC_TYPE:
+<span class="fc" id="L128">                return new JmsTopic(address);</span>
+            case TEMP_QUEUE_TYPE:
+<span class="fc" id="L130">                return new JmsTemporaryQueue(address);</span>
+            case TEMP_TOPIC_TYPE:
+<span class="fc" id="L132">                return new JmsTemporaryTopic(address);</span>
+            }
+        }
+
+<span class="fc bfc" id="L136" title="All 2 branches covered.">        if (consumerDestination.isQueue()) {</span>
+<span class="fc bfc" id="L137" title="All 2 branches covered.">            if (consumerDestination.isTemporary()) {</span>
+<span class="fc" id="L138">                return new JmsTemporaryQueue(address);</span>
+            } else {
+<span class="fc" id="L140">                return new JmsQueue(address);</span>
+            }
+<span class="fc bfc" id="L142" title="All 2 branches covered.">        } else if (consumerDestination.isTopic()) {</span>
+<span class="fc bfc" id="L143" title="All 2 branches covered.">            if (consumerDestination.isTemporary()) {</span>
+<span class="fc" id="L144">                return new JmsTemporaryTopic(address);</span>
+            } else {
+<span class="fc" id="L146">                return new JmsTopic(address);</span>
+            }
+        }
+
+        // fall back to a Queue Destination since we need a real JMS destination
+<span class="fc" id="L151">        return new JmsQueue(address);</span>
+    }
+
+    public void setToAddressFromDestination(AmqpJmsMessageFacade message, JmsDestination destination) {
+<span class="fc" id="L155">        String address = getDestinationAddress(destination, message.getConnection());</span>
+<span class="fc" id="L156">        byte typeValue = toTypeAnnotation(destination);</span>
+
+<span class="fc" id="L158">        message.setToAddress(address);</span>
+
+        // Set or clear the new byte type annotation as appropriate
+<span class="fc bfc" id="L161" title="All 4 branches covered.">        if (address == null || typeValue == UNKNOWN_TYPE) {</span>
+<span class="fc" id="L162">            message.removeMessageAnnotation(JMS_DEST_TYPE_MSG_ANNOTATION_SYMBOL_NAME);</span>
+        } else {
+<span class="fc" id="L164">            message.setMessageAnnotation(JMS_DEST_TYPE_MSG_ANNOTATION_SYMBOL_NAME, typeValue);</span>
+        }
+
+        // Always clear the legacy string type annotation
+<span class="fc" id="L168">        message.removeMessageAnnotation(AmqpMessageSupport.LEGACY_TO_TYPE_MSG_ANNOTATION_SYMBOL_NAME);</span>
+<span class="fc" id="L169">    }</span>
+
+    public void setReplyToAddressFromDestination(AmqpJmsMessageFacade message, JmsDestination destination) {
+<span class="fc" id="L172">        String replyToAddress = getDestinationAddress(destination, message.getConnection());</span>
+<span class="fc" id="L173">        byte typeValue = toTypeAnnotation(destination);</span>
+
+<span class="fc" id="L175">        message.setReplyToAddress(replyToAddress);</span>
+
+        // Set or clear the new byte type annotation as appropriate
+<span class="fc bfc" id="L178" title="All 4 branches covered.">        if (replyToAddress == null || typeValue == UNKNOWN_TYPE) {</span>
+<span class="fc" id="L179">            message.removeMessageAnnotation(JMS_REPLY_TO_TYPE_MSG_ANNOTATION_SYMBOL_NAME);</span>
+        } else {
+<span class="fc" id="L181">            message.setMessageAnnotation(JMS_REPLY_TO_TYPE_MSG_ANNOTATION_SYMBOL_NAME, typeValue);</span>
+        }
+
+        // Always clear the legacy string type annotation
+<span class="fc" id="L185">        message.removeMessageAnnotation(AmqpMessageSupport.LEGACY_REPLY_TO_TYPE_MSG_ANNOTATION_SYMBOL_NAME);</span>
+<span class="fc" id="L186">    }</span>
+
+    public String getDestinationAddress(JmsDestination destination, AmqpConnection conn) {
+<span class="fc bfc" id="L189" title="All 2 branches covered.">        if (destination == null) {</span>
+<span class="fc" id="L190">            return null;</span>
+        }
+
+<span class="fc" id="L193">        final String name = destination.getName();</span>
+
+        // Add prefix if necessary
+<span class="fc bfc" id="L196" title="All 2 branches covered.">        if (!destination.isTemporary()) {</span>
+<span class="fc bfc" id="L197" title="All 2 branches covered.">            if (destination.isQueue()) {</span>
+<span class="fc" id="L198">                String queuePrefix = conn.getQueuePrefix();</span>
+<span class="pc bpc" id="L199" title="1 of 4 branches missed.">                if (queuePrefix != null &amp;&amp; !name.startsWith(queuePrefix)) {</span>
+<span class="fc" id="L200">                    return queuePrefix + name;</span>
+                }
+            }
+
+<span class="fc bfc" id="L204" title="All 2 branches covered.">            if (destination.isTopic()) {</span>
+<span class="fc" id="L205">                String topicPrefix = conn.getTopicPrefix();</span>
+<span class="pc bpc" id="L206" title="1 of 4 branches missed.">                if (topicPrefix != null &amp;&amp; !name.startsWith(topicPrefix)) {</span>
+<span class="fc" id="L207">                    return topicPrefix + name;</span>
+                }
+            }
+        }
+
+<span class="fc" id="L212">        return name;</span>
+    }
+
+    /**
+     * @return the annotation type value, or {@value AmqpDestinationHelper#UNKNOWN_TYPE} if the
+     *         supplied destination null or can't be classified
+     */
+    private byte toTypeAnnotation(JmsDestination destination) {
+<span class="fc bfc" id="L220" title="All 2 branches covered.">        if (destination == null) {</span>
+<span class="fc" id="L221">            return UNKNOWN_TYPE;</span>
+        }
+
+<span class="fc bfc" id="L224" title="All 2 branches covered.">        if (destination.isQueue()) {</span>
+<span class="fc bfc" id="L225" title="All 2 branches covered.">            if (destination.isTemporary()) {</span>
+<span class="fc" id="L226">                return TEMP_QUEUE_TYPE;</span>
+            } else {
+<span class="fc" id="L228">                return QUEUE_TYPE;</span>
+            }
+<span class="fc bfc" id="L230" title="All 2 branches covered.">        } else if (destination.isTopic()) {</span>
+<span class="fc bfc" id="L231" title="All 2 branches covered.">            if (destination.isTemporary()) {</span>
+<span class="fc" id="L232">                return TEMP_TOPIC_TYPE;</span>
+            } else {
+<span class="fc" id="L234">                return TOPIC_TYPE;</span>
+            }
+        }
+
+<span class="fc" id="L238">        return UNKNOWN_TYPE;</span>
+    }
+
+    Set&lt;String&gt; splitAttributesString(String typeString) {
+<span class="fc bfc" id="L242" title="All 2 branches covered.">        if (typeString == null) {</span>
+<span class="fc" id="L243">            return null;</span>
+        }
+
+<span class="fc" id="L246">        HashSet&lt;String&gt; typeSet = new HashSet&lt;String&gt;();</span>
+
+        // Split string on commas and their surrounding whitespace
+<span class="fc bfc" id="L249" title="All 2 branches covered.">        for (String attr : typeString.split(&quot;\\s*,\\s*&quot;)) {</span>
+            // ignore empty values
+<span class="fc bfc" id="L251" title="All 2 branches covered.">            if (!attr.equals(&quot;&quot;)) {</span>
+<span class="fc" id="L252">                typeSet.add(attr);</span>
+            }
+        }
+
+<span class="fc" id="L256">        return typeSet;</span>
+    }
+
+    private byte getTypeByte(AmqpJmsMessageFacade message, String annotationName) {
+<span class="fc" id="L260">        Object typeAnnotation = message.getMessageAnnotation(annotationName);</span>
+
+<span class="fc bfc" id="L262" title="All 2 branches covered.">        if (typeAnnotation == null) {</span>
+            // Doesn't exist, or null.
+<span class="fc" id="L264">            return UNKNOWN_TYPE;</span>
+<span class="fc bfc" id="L265" title="All 2 branches covered.">        } else if (typeAnnotation instanceof Byte) {</span>
+            // Return the value found.
+<span class="fc" id="L267">            return (Byte) typeAnnotation;</span>
+        } else {
+            // Handle legacy strings.
+<span class="fc" id="L270">            String typeString = String.valueOf(typeAnnotation);</span>
+<span class="fc" id="L271">            Set&lt;String&gt; typeSet = null;</span>
+
+<span class="pc bpc" id="L273" title="1 of 2 branches missed.">            if (typeString != null) {</span>
+<span class="fc" id="L274">                typeSet = splitAttributesString(typeString);</span>
+            }
+
+<span class="pc bpc" id="L277" title="1 of 4 branches missed.">            if (typeSet != null &amp;&amp; !typeSet.isEmpty()) {</span>
+<span class="fc bfc" id="L278" title="All 2 branches covered.">                if (typeSet.contains(AmqpMessageSupport.LEGACY_QUEUE_ATTRIBUTE)) {</span>
+<span class="fc bfc" id="L279" title="All 2 branches covered.">                    if (typeSet.contains(AmqpMessageSupport.LEGACY_TEMPORARY_ATTRIBUTE)) {</span>
+<span class="fc" id="L280">                        return TEMP_QUEUE_TYPE;</span>
+                    } else {
+<span class="fc" id="L282">                        return QUEUE_TYPE;</span>
+                    }
+<span class="fc bfc" id="L284" title="All 2 branches covered.">                } else if (typeSet.contains(AmqpMessageSupport.LEGACY_TOPIC_ATTRIBUTE)) {</span>
+<span class="fc bfc" id="L285" title="All 2 branches covered.">                    if (typeSet.contains(AmqpMessageSupport.LEGACY_TEMPORARY_ATTRIBUTE)) {</span>
+<span class="fc" id="L286">                        return TEMP_TOPIC_TYPE;</span>
+                    } else {
+<span class="fc" id="L288">                        return TOPIC_TYPE;</span>
+                    }
+                }
+            }
+
+<span class="fc" id="L293">            return UNKNOWN_TYPE;</span>
+        }
+    }
+
+    /**
+     * @return the type capability, or null if the supplied destination is null or can't be classified
+     */
+    public Symbol toTypeCapability(JmsDestination destination) {
+<span class="fc bfc" id="L301" title="All 2 branches covered.">        if (destination == null) {</span>
+<span class="fc" id="L302">            return null;</span>
+        }
+
+<span class="fc bfc" id="L305" title="All 2 branches covered.">        if (destination.isQueue()) {</span>
+<span class="fc bfc" id="L306" title="All 2 branches covered.">            if (destination.isTemporary()) {</span>
+<span class="fc" id="L307">                return TEMP_QUEUE_CAPABILITY;</span>
+            } else {
+<span class="fc" id="L309">                return QUEUE_CAPABILITY;</span>
+            }
+<span class="pc bpc" id="L311" title="1 of 2 branches missed.">        } else if (destination.isTopic()) {</span>
+<span class="fc bfc" id="L312" title="All 2 branches covered.">            if (destination.isTemporary()) {</span>
+<span class="fc" id="L313">                return TEMP_TOPIC_CAPABILITY;</span>
+            } else {
+<span class="fc" id="L315">                return TOPIC_CAPABILITY;</span>
+            }
+        }
+
+<span class="nc" id="L319">        return null;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

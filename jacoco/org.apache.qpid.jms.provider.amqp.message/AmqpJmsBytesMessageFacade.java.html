@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpJmsBytesMessageFacade.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp.message</a> &gt; <span class="el_source">AmqpJmsBytesMessageFacade.java</span></div><h1>AmqpJmsBytesMessageFacade.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp.message;
+
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_BYTES_MESSAGE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_MSG_TYPE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.OCTET_STREAM_CONTENT_TYPE;
+import io.netty.buffer.ByteBuf;
+import io.netty.buffer.ByteBufInputStream;
+import io.netty.buffer.ByteBufOutputStream;
+import io.netty.buffer.Unpooled;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+
+import javax.jms.IllegalStateException;
+import javax.jms.JMSException;
+
+import org.apache.qpid.jms.message.facade.JmsBytesMessageFacade;
+import org.apache.qpid.jms.provider.amqp.AmqpConnection;
+import org.apache.qpid.jms.provider.amqp.AmqpConsumer;
+import org.apache.qpid.proton.amqp.Binary;
+import org.apache.qpid.proton.amqp.messaging.AmqpValue;
+import org.apache.qpid.proton.amqp.messaging.Data;
+import org.apache.qpid.proton.amqp.messaging.Section;
+import org.apache.qpid.proton.message.Message;
+
+/**
+ * A JmsBytesMessageFacade that wraps around Proton AMQP Message instances to provide
+ * access to the underlying bytes contained in the message.
+ */
+public class AmqpJmsBytesMessageFacade extends AmqpJmsMessageFacade implements JmsBytesMessageFacade {
+
+<span class="fc" id="L49">    private static final Binary EMPTY_BINARY = new Binary(new byte[0]);</span>
+<span class="fc" id="L50">    private static final Data EMPTY_BODY = new Data(EMPTY_BINARY);</span>
+
+    private transient ByteBufInputStream bytesIn;
+    private transient ByteBufOutputStream bytesOut;
+
+    /**
+     * Creates a new facade instance
+     *
+     * @param connection
+     *        the AmqpConnection that under which this facade was created.
+     */
+    public AmqpJmsBytesMessageFacade(AmqpConnection connection) {
+<span class="fc" id="L62">        super(connection);</span>
+<span class="fc" id="L63">        setContentType(OCTET_STREAM_CONTENT_TYPE);</span>
+<span class="fc" id="L64">        setMessageAnnotation(JMS_MSG_TYPE, JMS_BYTES_MESSAGE);</span>
+<span class="fc" id="L65">        getAmqpMessage().setBody(EMPTY_BODY);</span>
+<span class="fc" id="L66">    }</span>
+
+    /**
+     * Creates a new Facade around an incoming AMQP Message for dispatch to the
+     * JMS Consumer instance.
+     *
+     * @param consumer
+     *        the consumer that received this message.
+     * @param message
+     *        the incoming Message instance that is being wrapped.
+     */
+    public AmqpJmsBytesMessageFacade(AmqpConsumer consumer, Message message) {
+<span class="fc" id="L78">        super(consumer, message);</span>
+<span class="fc" id="L79">    }</span>
+
+    @Override
+    public AmqpJmsBytesMessageFacade copy() {
+<span class="fc" id="L83">        reset();</span>
+<span class="fc" id="L84">        AmqpJmsBytesMessageFacade copy = new AmqpJmsBytesMessageFacade(connection);</span>
+<span class="fc" id="L85">        copyInto(copy);</span>
+
+<span class="fc" id="L87">        Binary payload = getBinaryFromBody();</span>
+<span class="fc bfc" id="L88" title="All 2 branches covered.">        if (payload.getLength() &gt; 0) {</span>
+<span class="fc" id="L89">            byte[] result = new byte[payload.getLength()];</span>
+<span class="fc" id="L90">            System.arraycopy(payload.getArray(), payload.getArrayOffset(), result, 0, payload.getLength());</span>
+<span class="fc" id="L91">            copy.message.setBody(new Data(new Binary(result)));</span>
+<span class="fc" id="L92">        } else {</span>
+<span class="fc" id="L93">            copy.message.setBody(EMPTY_BODY);</span>
+        }
+
+<span class="fc" id="L96">        return copy;</span>
+    }
+
+    @Override
+    public byte getJmsMsgType() {
+<span class="fc" id="L101">        return JMS_BYTES_MESSAGE;</span>
+    }
+
+    @Override
+    public void clearBody() {
+<span class="fc bfc" id="L106" title="All 2 branches covered.">        if (bytesIn != null) {</span>
+            try {
+<span class="fc" id="L108">                bytesIn.close();</span>
+<span class="fc" id="L109">            } catch (IOException e) {</span>
+<span class="fc" id="L110">            }</span>
+<span class="fc" id="L111">            bytesIn = null;</span>
+        }
+<span class="fc bfc" id="L113" title="All 2 branches covered.">        if (bytesOut != null) {</span>
+            try {
+<span class="fc" id="L115">                bytesOut.close();</span>
+<span class="fc" id="L116">            } catch (IOException e) {</span>
+<span class="fc" id="L117">            }</span>
+
+<span class="fc" id="L119">            bytesOut = null;</span>
+        }
+
+<span class="fc" id="L122">        message.setBody(EMPTY_BODY);</span>
+<span class="fc" id="L123">    }</span>
+
+    @Override
+    public InputStream getInputStream() throws JMSException {
+<span class="fc bfc" id="L127" title="All 2 branches covered.">        if (bytesOut != null) {</span>
+<span class="fc" id="L128">            throw new IllegalStateException(&quot;Body is being written to, cannot perform a read.&quot;);</span>
+        }
+
+<span class="fc bfc" id="L131" title="All 2 branches covered.">        if (bytesIn == null) {</span>
+<span class="fc" id="L132">            Binary body = getBinaryFromBody();</span>
+            // Duplicate the content buffer to allow for getBodyLength() validity.
+<span class="fc" id="L134">            bytesIn = new ByteBufInputStream(</span>
+                Unpooled.wrappedBuffer(body.getArray(), body.getArrayOffset(), body.getLength()));
+        }
+
+<span class="fc" id="L138">        return bytesIn;</span>
+    }
+
+    @Override
+    public OutputStream getOutputStream() throws JMSException {
+<span class="fc bfc" id="L143" title="All 2 branches covered.">        if (bytesIn != null) {</span>
+<span class="fc" id="L144">            throw new IllegalStateException(&quot;Body is being read from, cannot perform a write.&quot;);</span>
+        }
+
+<span class="fc bfc" id="L147" title="All 2 branches covered.">        if (bytesOut == null) {</span>
+<span class="fc" id="L148">            bytesOut = new ByteBufOutputStream(Unpooled.buffer());</span>
+<span class="fc" id="L149">            message.setBody(EMPTY_BODY);</span>
+        }
+
+<span class="fc" id="L152">        return bytesOut;</span>
+    }
+
+    @Override
+    public void reset() {
+<span class="fc bfc" id="L157" title="All 2 branches covered.">        if (bytesOut != null) {</span>
+<span class="fc" id="L158">            ByteBuf writeBuf = bytesOut.buffer();</span>
+<span class="fc" id="L159">            Binary body = new Binary(writeBuf.array(), writeBuf.arrayOffset(), writeBuf.readableBytes());</span>
+<span class="fc" id="L160">            message.setBody(new Data(body));</span>
+            try {
+<span class="fc" id="L162">                bytesOut.close();</span>
+<span class="fc" id="L163">            } catch (IOException e) {</span>
+<span class="fc" id="L164">            }</span>
+<span class="fc" id="L165">            bytesOut = null;</span>
+<span class="fc bfc" id="L166" title="All 2 branches covered.">        } else if (bytesIn != null) {</span>
+            try {
+<span class="fc" id="L168">                bytesIn.close();</span>
+<span class="fc" id="L169">            } catch (IOException e) {</span>
+<span class="fc" id="L170">            }</span>
+<span class="fc" id="L171">            bytesIn = null;</span>
+        }
+<span class="fc" id="L173">    }</span>
+
+    @Override
+    public int getBodyLength() {
+<span class="fc" id="L177">        return getBinaryFromBody().getLength();</span>
+    }
+
+    /**
+     * Get the underlying Binary object from the body, or
+     * {@link EMPTY_BINARY} if there is none. Never returns null.
+     *
+     * @return the body binary, or empty substitute if there is none
+     */
+    private Binary getBinaryFromBody() {
+<span class="fc" id="L187">        Section body = getAmqpMessage().getBody();</span>
+<span class="fc" id="L188">        Binary result = EMPTY_BINARY;</span>
+
+<span class="fc bfc" id="L190" title="All 2 branches covered.">        if (body == null) {</span>
+<span class="fc" id="L191">            return result;</span>
+<span class="fc bfc" id="L192" title="All 2 branches covered.">        } else if (body instanceof Data) {</span>
+<span class="fc" id="L193">            Binary payload = ((Data) body).getValue();</span>
+<span class="fc bfc" id="L194" title="All 4 branches covered.">            if (payload != null &amp;&amp; payload.getLength() != 0) {</span>
+<span class="fc" id="L195">                result = payload;</span>
+            }
+<span class="fc bfc" id="L197" title="All 2 branches covered.">        } else if(body instanceof AmqpValue) {</span>
+<span class="fc" id="L198">            Object value = ((AmqpValue) body).getValue();</span>
+<span class="fc bfc" id="L199" title="All 2 branches covered.">            if (value == null) {</span>
+<span class="fc" id="L200">                return result;</span>
+            }
+
+<span class="fc bfc" id="L203" title="All 2 branches covered.">            if (value instanceof Binary) {</span>
+<span class="fc" id="L204">                Binary payload = (Binary)value;</span>
+<span class="fc bfc" id="L205" title="All 2 branches covered.">                if (payload.getLength() != 0) {</span>
+<span class="fc" id="L206">                    result = payload;</span>
+                }
+<span class="fc" id="L208">            } else {</span>
+<span class="fc" id="L209">                throw new java.lang.IllegalStateException(&quot;Unexpected amqp-value body content type: &quot; + value.getClass().getSimpleName());</span>
+            }
+<span class="fc" id="L211">        } else {</span>
+<span class="fc" id="L212">            throw new java.lang.IllegalStateException(&quot;Unexpected body content type: &quot; + body.getClass().getSimpleName());</span>
+        }
+
+<span class="fc" id="L215">        return result;</span>
+    }
+
+    @Override
+    public void onSend(boolean disableMsgId, boolean disableTimestamp, long producerTtl) throws JMSException {
+<span class="fc" id="L220">        super.onSend(disableMsgId, disableTimestamp, producerTtl);</span>
+
+<span class="fc" id="L222">        reset();</span>
+<span class="fc" id="L223">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

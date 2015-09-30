@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>NettySslTransport.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.transports.netty</a> &gt; <span class="el_source">NettySslTransport.java</span></div><h1>NettySslTransport.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.transports.netty;
+
+import io.netty.channel.Channel;
+import io.netty.handler.ssl.SslHandler;
+import io.netty.util.concurrent.Future;
+import io.netty.util.concurrent.GenericFutureListener;
+
+import java.net.URI;
+import java.security.Principal;
+
+import org.apache.qpid.jms.transports.SSLTransport;
+import org.apache.qpid.jms.transports.TransportListener;
+import org.apache.qpid.jms.transports.TransportOptions;
+import org.apache.qpid.jms.transports.TransportSslOptions;
+import org.apache.qpid.jms.transports.TransportSupport;
+import org.apache.qpid.jms.util.IOExceptionSupport;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Extends the Netty based TCP transport to add SSL support.
+ */
+public class NettySslTransport extends NettyTcpTransport implements SSLTransport {
+
+<span class="fc" id="L41">    private static final Logger LOG = LoggerFactory.getLogger(NettySslTransport.class);</span>
+
+    /**
+     * Create a new transport instance
+     *
+     * @param remoteLocation
+     *        the URI that defines the remote resource to connect to.
+     * @param options
+     *        the transport options used to configure the socket connection.
+     */
+    public NettySslTransport(URI remoteLocation, TransportOptions options) {
+<span class="fc" id="L52">        this(null, remoteLocation, options);</span>
+<span class="fc" id="L53">    }</span>
+
+    /**
+     * Create a new transport instance
+     *
+     * @param listener
+     *        the TransportListener that will receive events from this Transport.
+     * @param remoteLocation
+     *        the URI that defines the remote resource to connect to.
+     * @param options
+     *        the transport options used to configure the socket connection.
+     */
+    public NettySslTransport(TransportListener listener, URI remoteLocation, TransportOptions options) {
+<span class="fc" id="L66">        super(listener, remoteLocation, options);</span>
+<span class="fc" id="L67">    }</span>
+
+    @Override
+    protected void configureChannel(Channel channel) throws Exception {
+<span class="fc" id="L71">        channel.pipeline().addLast(TransportSupport.createSslHandler(getRemoteLocation(), getSslOptions()));</span>
+<span class="fc" id="L72">        super.configureChannel(channel);</span>
+<span class="fc" id="L73">    }</span>
+
+    @Override
+    protected void handleConnected(final Channel channel) throws Exception {
+<span class="fc" id="L77">        SslHandler sslHandler = channel.pipeline().get(SslHandler.class);</span>
+
+<span class="fc" id="L79">        Future&lt;Channel&gt; channelFuture = sslHandler.handshakeFuture();</span>
+<span class="fc" id="L80">        channelFuture.addListener(new GenericFutureListener&lt;Future&lt;Channel&gt;&gt;() {</span>
+            @Override
+            public void operationComplete(Future&lt;Channel&gt; future) throws Exception {
+<span class="fc bfc" id="L83" title="All 2 branches covered.">                if (future.isSuccess()) {</span>
+<span class="fc" id="L84">                    LOG.trace(&quot;SSL Handshake has completed: {}&quot;, channel);</span>
+<span class="fc" id="L85">                    connectionEstablished(channel);</span>
+                } else {
+<span class="fc" id="L87">                    LOG.trace(&quot;SSL Handshake has failed: {}&quot;, channel);</span>
+<span class="fc" id="L88">                    connectionFailed(IOExceptionSupport.create(future.cause()));</span>
+                }
+<span class="fc" id="L90">            }</span>
+        });
+<span class="fc" id="L92">    }</span>
+
+    @Override
+    public TransportOptions getTransportOptions() {
+<span class="fc bfc" id="L96" title="All 2 branches covered.">        if (options == null) {</span>
+<span class="fc" id="L97">            options = TransportSslOptions.INSTANCE;</span>
+        }
+
+<span class="fc" id="L100">        return options;</span>
+    }
+
+    @Override
+    protected int getRemotePort() {
+<span class="pc bpc" id="L105" title="1 of 2 branches missed.">        return remote.getPort() != -1 ? remote.getPort() : getSslOptions().getDefaultSslPort();</span>
+    }
+
+    private TransportSslOptions getSslOptions() {
+<span class="fc" id="L109">        return (TransportSslOptions) getTransportOptions();</span>
+    }
+
+    @Override
+    public Principal getLocalPrincipal() {
+<span class="fc" id="L114">        SslHandler sslHandler = channel.pipeline().get(SslHandler.class);</span>
+
+<span class="fc" id="L116">        return sslHandler.engine().getSession().getLocalPrincipal();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

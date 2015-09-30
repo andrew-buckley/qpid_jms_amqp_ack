@@ -1,0 +1,448 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ComparisonExpression.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.selector.filter</a> &gt; <span class="el_source">ComparisonExpression.java</span></div><h1>ComparisonExpression.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.selector.filter;
+
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.regex.Pattern;
+
+/**
+ * A filter performing a comparison of two objects
+ */
+public abstract class ComparisonExpression extends BinaryExpression implements BooleanExpression {
+
+<span class="fc" id="L29">    private static final Set&lt;Character&gt; REGEXP_CONTROL_CHARS = new HashSet&lt;Character&gt;();</span>
+
+    /**
+     * @param left
+     * @param right
+     */
+    public ComparisonExpression(Expression left, Expression right) {
+<span class="fc" id="L36">        super(left, right);</span>
+<span class="fc" id="L37">    }</span>
+
+    public static BooleanExpression createBetween(Expression value, Expression left, Expression right) {
+<span class="fc" id="L40">        return LogicExpression.createAND(createGreaterThanEqual(value, left), createLessThanEqual(value, right));</span>
+    }
+
+    public static BooleanExpression createNotBetween(Expression value, Expression left, Expression right) {
+<span class="nc" id="L44">        return LogicExpression.createOR(createLessThan(value, left), createGreaterThan(value, right));</span>
+    }
+
+    static {
+<span class="fc" id="L48">        REGEXP_CONTROL_CHARS.add(Character.valueOf('.'));</span>
+<span class="fc" id="L49">        REGEXP_CONTROL_CHARS.add(Character.valueOf('\\'));</span>
+<span class="fc" id="L50">        REGEXP_CONTROL_CHARS.add(Character.valueOf('['));</span>
+<span class="fc" id="L51">        REGEXP_CONTROL_CHARS.add(Character.valueOf(']'));</span>
+<span class="fc" id="L52">        REGEXP_CONTROL_CHARS.add(Character.valueOf('^'));</span>
+<span class="fc" id="L53">        REGEXP_CONTROL_CHARS.add(Character.valueOf('$'));</span>
+<span class="fc" id="L54">        REGEXP_CONTROL_CHARS.add(Character.valueOf('?'));</span>
+<span class="fc" id="L55">        REGEXP_CONTROL_CHARS.add(Character.valueOf('*'));</span>
+<span class="fc" id="L56">        REGEXP_CONTROL_CHARS.add(Character.valueOf('+'));</span>
+<span class="fc" id="L57">        REGEXP_CONTROL_CHARS.add(Character.valueOf('{'));</span>
+<span class="fc" id="L58">        REGEXP_CONTROL_CHARS.add(Character.valueOf('}'));</span>
+<span class="fc" id="L59">        REGEXP_CONTROL_CHARS.add(Character.valueOf('|'));</span>
+<span class="fc" id="L60">        REGEXP_CONTROL_CHARS.add(Character.valueOf('('));</span>
+<span class="fc" id="L61">        REGEXP_CONTROL_CHARS.add(Character.valueOf(')'));</span>
+<span class="fc" id="L62">        REGEXP_CONTROL_CHARS.add(Character.valueOf(':'));</span>
+<span class="fc" id="L63">        REGEXP_CONTROL_CHARS.add(Character.valueOf('&amp;'));</span>
+<span class="fc" id="L64">        REGEXP_CONTROL_CHARS.add(Character.valueOf('&lt;'));</span>
+<span class="fc" id="L65">        REGEXP_CONTROL_CHARS.add(Character.valueOf('&gt;'));</span>
+<span class="fc" id="L66">        REGEXP_CONTROL_CHARS.add(Character.valueOf('='));</span>
+<span class="fc" id="L67">        REGEXP_CONTROL_CHARS.add(Character.valueOf('!'));</span>
+<span class="fc" id="L68">    }</span>
+
+    static class LikeExpression extends UnaryExpression implements BooleanExpression {
+
+        Pattern likePattern;
+
+        /**
+         */
+        public LikeExpression(Expression right, String like, int escape) {
+<span class="fc" id="L77">            super(right);</span>
+
+<span class="fc" id="L79">            StringBuffer regexp = new StringBuffer(like.length() * 2);</span>
+<span class="fc" id="L80">            regexp.append(&quot;\\A&quot;); // The beginning of the input</span>
+<span class="fc bfc" id="L81" title="All 2 branches covered.">            for (int i = 0; i &lt; like.length(); i++) {</span>
+<span class="fc" id="L82">                char c = like.charAt(i);</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">                if (escape == (0xFFFF &amp; c)) {</span>
+<span class="fc" id="L84">                    i++;</span>
+<span class="pc bpc" id="L85" title="1 of 2 branches missed.">                    if (i &gt;= like.length()) {</span>
+                        // nothing left to escape...
+<span class="nc" id="L87">                        break;</span>
+                    }
+
+<span class="fc" id="L90">                    char t = like.charAt(i);</span>
+<span class="fc" id="L91">                    regexp.append(&quot;\\x&quot;);</span>
+<span class="fc" id="L92">                    regexp.append(Integer.toHexString(0xFFFF &amp; t));</span>
+<span class="fc bfc" id="L93" title="All 2 branches covered.">                } else if (c == '%') {</span>
+<span class="fc" id="L94">                    regexp.append(&quot;.*?&quot;); // Do a non-greedy match</span>
+<span class="fc bfc" id="L95" title="All 2 branches covered.">                } else if (c == '_') {</span>
+<span class="fc" id="L96">                    regexp.append(&quot;.&quot;); // match one</span>
+<span class="fc bfc" id="L97" title="All 2 branches covered.">                } else if (REGEXP_CONTROL_CHARS.contains(Character.valueOf(c))) {</span>
+<span class="fc" id="L98">                    regexp.append(&quot;\\x&quot;);</span>
+<span class="fc" id="L99">                    regexp.append(Integer.toHexString(0xFFFF &amp; c));</span>
+                } else {
+<span class="fc" id="L101">                    regexp.append(c);</span>
+                }
+            }
+<span class="fc" id="L104">            regexp.append(&quot;\\z&quot;); // The end of the input</span>
+
+<span class="fc" id="L106">            likePattern = Pattern.compile(regexp.toString(), Pattern.DOTALL);</span>
+<span class="fc" id="L107">        }</span>
+
+        /**
+         * @see UnaryExpression#getExpressionSymbol()
+         */
+        @Override
+        public String getExpressionSymbol() {
+<span class="nc" id="L114">            return &quot;LIKE&quot;;</span>
+        }
+
+        /**
+         * @see Expression#evaluate(Filterable)
+         */
+        @Override
+        public Object evaluate(Filterable message) throws FilterException {
+
+<span class="fc" id="L123">            Object rv = this.getRight().evaluate(message);</span>
+
+<span class="pc bpc" id="L125" title="1 of 2 branches missed.">            if (rv == null) {</span>
+<span class="nc" id="L126">                return null;</span>
+            }
+
+<span class="pc bpc" id="L129" title="1 of 2 branches missed.">            if (!(rv instanceof String)) {</span>
+<span class="nc" id="L130">                return Boolean.FALSE;</span>
+                // throw new RuntimeException(&quot;LIKE can only operate on String
+                // identifiers. LIKE attempted on: '&quot; + rv.getClass());
+            }
+
+<span class="fc bfc" id="L135" title="All 2 branches covered.">            return likePattern.matcher((String)rv).matches() ? Boolean.TRUE : Boolean.FALSE;</span>
+        }
+
+        @Override
+        public boolean matches(Filterable message) throws FilterException {
+<span class="fc" id="L140">            Object object = evaluate(message);</span>
+<span class="pc bpc" id="L141" title="1 of 4 branches missed.">            return object != null &amp;&amp; object == Boolean.TRUE;</span>
+        }
+    }
+
+    public static BooleanExpression createLike(Expression left, String right, String escape) {
+<span class="pc bpc" id="L146" title="1 of 4 branches missed.">        if (escape != null &amp;&amp; escape.length() != 1) {</span>
+<span class="nc" id="L147">            throw new RuntimeException(&quot;The ESCAPE string litteral is invalid.  It can only be one character.  Litteral used: &quot; + escape);</span>
+        }
+<span class="fc" id="L149">        int c = -1;</span>
+<span class="fc bfc" id="L150" title="All 2 branches covered.">        if (escape != null) {</span>
+<span class="fc" id="L151">            c = 0xFFFF &amp; escape.charAt(0);</span>
+        }
+
+<span class="fc" id="L154">        return new LikeExpression(left, right, c);</span>
+    }
+
+    public static BooleanExpression createNotLike(Expression left, String right, String escape) {
+<span class="fc" id="L158">        return UnaryExpression.createNOT(createLike(left, right, escape));</span>
+    }
+
+    public static BooleanExpression createInFilter(Expression left, List elements) {
+
+<span class="pc bpc" id="L163" title="1 of 2 branches missed.">        if (!(left instanceof PropertyExpression)) {</span>
+<span class="nc" id="L164">            throw new RuntimeException(&quot;Expected a property for In expression, got: &quot; + left);</span>
+        }
+<span class="fc" id="L166">        return UnaryExpression.createInExpression((PropertyExpression)left, elements, false);</span>
+    }
+
+    public static BooleanExpression createNotInFilter(Expression left, List elements) {
+
+<span class="pc bpc" id="L171" title="1 of 2 branches missed.">        if (!(left instanceof PropertyExpression)) {</span>
+<span class="nc" id="L172">            throw new RuntimeException(&quot;Expected a property for In expression, got: &quot; + left);</span>
+        }
+<span class="fc" id="L174">        return UnaryExpression.createInExpression((PropertyExpression)left, elements, true);</span>
+    }
+
+    public static BooleanExpression createIsNull(Expression left) {
+<span class="fc" id="L178">        return doCreateEqual(left, ConstantExpression.NULL);</span>
+    }
+
+    public static BooleanExpression createIsNotNull(Expression left) {
+<span class="fc" id="L182">        return UnaryExpression.createNOT(doCreateEqual(left, ConstantExpression.NULL));</span>
+    }
+
+    public static BooleanExpression createNotEqual(Expression left, Expression right) {
+<span class="nc" id="L186">        return UnaryExpression.createNOT(createEqual(left, right));</span>
+    }
+
+    public static BooleanExpression createEqual(Expression left, Expression right) {
+<span class="fc" id="L190">        checkEqualOperand(left);</span>
+<span class="fc" id="L191">        checkEqualOperand(right);</span>
+<span class="fc" id="L192">        checkEqualOperandCompatability(left, right);</span>
+<span class="fc" id="L193">        return doCreateEqual(left, right);</span>
+    }
+
+    private static BooleanExpression doCreateEqual(Expression left, Expression right) {
+<span class="fc" id="L197">        return new ComparisonExpression(left, right) {</span>
+
+            @Override
+            public Object evaluate(Filterable message) throws FilterException {
+<span class="fc" id="L201">                Object lv = left.evaluate(message);</span>
+<span class="fc" id="L202">                Object rv = right.evaluate(message);</span>
+
+                // Iff one of the values is null
+<span class="fc bfc" id="L205" title="All 6 branches covered.">                if (lv == null ^ rv == null) {</span>
+<span class="fc" id="L206">                    return Boolean.FALSE;</span>
+                }
+<span class="fc bfc" id="L208" title="All 4 branches covered.">                if (lv == rv || lv.equals(rv)) {</span>
+<span class="fc" id="L209">                    return Boolean.TRUE;</span>
+                }
+<span class="pc bpc" id="L211" title="2 of 4 branches missed.">                if (lv instanceof Comparable &amp;&amp; rv instanceof Comparable) {</span>
+<span class="fc" id="L212">                    return compare((Comparable)lv, (Comparable)rv);</span>
+                }
+<span class="nc" id="L214">                return Boolean.FALSE;</span>
+            }
+
+            @Override
+            protected boolean asBoolean(int answer) {
+<span class="fc bfc" id="L219" title="All 2 branches covered.">                return answer == 0;</span>
+            }
+
+            @Override
+            public String getExpressionSymbol() {
+<span class="nc" id="L224">                return &quot;=&quot;;</span>
+            }
+        };
+    }
+
+    public static BooleanExpression createGreaterThan(final Expression left, final Expression right) {
+<span class="fc" id="L230">        checkLessThanOperand(left);</span>
+<span class="fc" id="L231">        checkLessThanOperand(right);</span>
+<span class="fc" id="L232">        return new ComparisonExpression(left, right) {</span>
+            @Override
+            protected boolean asBoolean(int answer) {
+<span class="fc bfc" id="L235" title="All 2 branches covered.">                return answer &gt; 0;</span>
+            }
+
+            @Override
+            public String getExpressionSymbol() {
+<span class="nc" id="L240">                return &quot;&gt;&quot;;</span>
+            }
+        };
+    }
+
+    public static BooleanExpression createGreaterThanEqual(final Expression left, final Expression right) {
+<span class="fc" id="L246">        checkLessThanOperand(left);</span>
+<span class="fc" id="L247">        checkLessThanOperand(right);</span>
+<span class="fc" id="L248">        return new ComparisonExpression(left, right) {</span>
+            @Override
+            protected boolean asBoolean(int answer) {
+<span class="fc bfc" id="L251" title="All 2 branches covered.">                return answer &gt;= 0;</span>
+            }
+
+            @Override
+            public String getExpressionSymbol() {
+<span class="nc" id="L256">                return &quot;&gt;=&quot;;</span>
+            }
+        };
+    }
+
+    public static BooleanExpression createLessThan(final Expression left, final Expression right) {
+<span class="fc" id="L262">        checkLessThanOperand(left);</span>
+<span class="fc" id="L263">        checkLessThanOperand(right);</span>
+<span class="fc" id="L264">        return new ComparisonExpression(left, right) {</span>
+
+            @Override
+            protected boolean asBoolean(int answer) {
+<span class="fc bfc" id="L268" title="All 2 branches covered.">                return answer &lt; 0;</span>
+            }
+
+            @Override
+            public String getExpressionSymbol() {
+<span class="nc" id="L273">                return &quot;&lt;&quot;;</span>
+            }
+
+        };
+    }
+
+    public static BooleanExpression createLessThanEqual(final Expression left, final Expression right) {
+<span class="fc" id="L280">        checkLessThanOperand(left);</span>
+<span class="fc" id="L281">        checkLessThanOperand(right);</span>
+<span class="fc" id="L282">        return new ComparisonExpression(left, right) {</span>
+
+            @Override
+            protected boolean asBoolean(int answer) {
+<span class="fc bfc" id="L286" title="All 2 branches covered.">                return answer &lt;= 0;</span>
+            }
+
+            @Override
+            public String getExpressionSymbol() {
+<span class="nc" id="L291">                return &quot;&lt;=&quot;;</span>
+            }
+        };
+    }
+
+    /**
+     * Only Numeric expressions can be used in {@literal &gt;, &gt;=, &lt; or &lt;=} expressions.
+     *
+     * @param expr
+     */
+    public static void checkLessThanOperand(Expression expr) {
+<span class="fc bfc" id="L302" title="All 2 branches covered.">        if (expr instanceof ConstantExpression) {</span>
+<span class="fc" id="L303">            Object value = ((ConstantExpression)expr).getValue();</span>
+<span class="pc bpc" id="L304" title="1 of 2 branches missed.">            if (value instanceof Number) {</span>
+<span class="fc" id="L305">                return;</span>
+            }
+
+            // Else it's boolean or a String..
+<span class="nc" id="L309">            throw new RuntimeException(&quot;Value '&quot; + expr + &quot;' cannot be compared.&quot;);</span>
+        }
+<span class="pc bpc" id="L311" title="1 of 2 branches missed.">        if (expr instanceof BooleanExpression) {</span>
+<span class="nc" id="L312">            throw new RuntimeException(&quot;Value '&quot; + expr + &quot;' cannot be compared.&quot;);</span>
+        }
+<span class="fc" id="L314">    }</span>
+
+    /**
+     * Validates that the expression can be used in {@literal == or &lt;&gt;} expressions. Cannot
+     * not be NULL TRUE or FALSE literals.
+     *
+     * @param expr
+     */
+    public static void checkEqualOperand(Expression expr) {
+<span class="fc bfc" id="L323" title="All 2 branches covered.">        if (expr instanceof ConstantExpression) {</span>
+<span class="fc" id="L324">            Object value = ((ConstantExpression)expr).getValue();</span>
+<span class="pc bpc" id="L325" title="1 of 2 branches missed.">            if (value == null) {</span>
+<span class="nc" id="L326">                throw new RuntimeException(&quot;'&quot; + expr + &quot;' cannot be compared.&quot;);</span>
+            }
+        }
+<span class="fc" id="L329">    }</span>
+
+    /**
+     * @param left
+     * @param right
+     */
+    private static void checkEqualOperandCompatability(Expression left, Expression right) {
+<span class="pc bpc" id="L336" title="1 of 4 branches missed.">        if (left instanceof ConstantExpression &amp;&amp; right instanceof ConstantExpression) {</span>
+<span class="nc bnc" id="L337" title="All 4 branches missed.">            if (left instanceof BooleanExpression &amp;&amp; !(right instanceof BooleanExpression)) {</span>
+<span class="nc" id="L338">                throw new RuntimeException(&quot;'&quot; + left + &quot;' cannot be compared with '&quot; + right + &quot;'&quot;);</span>
+            }
+        }
+<span class="fc" id="L341">    }</span>
+
+    @Override
+    public Object evaluate(Filterable message) throws FilterException {
+<span class="fc" id="L345">        Comparable&lt;Comparable&gt; lv = (Comparable)left.evaluate(message);</span>
+<span class="fc bfc" id="L346" title="All 2 branches covered.">        if (lv == null) {</span>
+<span class="fc" id="L347">            return null;</span>
+        }
+<span class="fc" id="L349">        Comparable rv = (Comparable)right.evaluate(message);</span>
+<span class="pc bpc" id="L350" title="1 of 2 branches missed.">        if (rv == null) {</span>
+<span class="nc" id="L351">            return null;</span>
+        }
+<span class="fc" id="L353">        return compare(lv, rv);</span>
+    }
+
+    protected Boolean compare(Comparable lv, Comparable rv) {
+<span class="fc" id="L357">        Class&lt;? extends Comparable&gt; lc = lv.getClass();</span>
+<span class="fc" id="L358">        Class&lt;? extends Comparable&gt; rc = rv.getClass();</span>
+        // If the the objects are not of the same type,
+        // try to convert up to allow the comparison.
+<span class="fc bfc" id="L361" title="All 2 branches covered.">        if (lc != rc) {</span>
+            try {
+<span class="fc bfc" id="L363" title="All 2 branches covered.">                if (lc == Byte.class) {</span>
+<span class="pc bpc" id="L364" title="1 of 2 branches missed.">                    if (rc == Short.class) {</span>
+<span class="nc" id="L365">                        lv = Short.valueOf(((Number)lv).shortValue());</span>
+<span class="pc bpc" id="L366" title="1 of 2 branches missed.">                    } else if (rc == Integer.class) {</span>
+<span class="fc" id="L367">                        lv = Integer.valueOf(((Number)lv).intValue());</span>
+<span class="nc bnc" id="L368" title="All 2 branches missed.">                    } else if (rc == Long.class) {</span>
+<span class="nc" id="L369">                        lv = Long.valueOf(((Number)lv).longValue());</span>
+<span class="nc bnc" id="L370" title="All 2 branches missed.">                    } else if (rc == Float.class) {</span>
+<span class="nc" id="L371">                        lv = new Float(((Number)lv).floatValue());</span>
+<span class="nc bnc" id="L372" title="All 2 branches missed.">                    } else if (rc == Double.class) {</span>
+<span class="nc" id="L373">                        lv = new Double(((Number)lv).doubleValue());</span>
+                    } else {
+<span class="nc" id="L375">                        return Boolean.FALSE;</span>
+                    }
+<span class="fc bfc" id="L377" title="All 2 branches covered.">                } else if (lc == Short.class) {</span>
+<span class="pc bpc" id="L378" title="1 of 2 branches missed.">                    if (rc == Integer.class) {</span>
+<span class="fc" id="L379">                        lv = Integer.valueOf(((Number)lv).intValue());</span>
+<span class="nc bnc" id="L380" title="All 2 branches missed.">                    } else if (rc == Long.class) {</span>
+<span class="nc" id="L381">                        lv = Long.valueOf(((Number)lv).longValue());</span>
+<span class="nc bnc" id="L382" title="All 2 branches missed.">                    } else if (rc == Float.class) {</span>
+<span class="nc" id="L383">                        lv = new Float(((Number)lv).floatValue());</span>
+<span class="nc bnc" id="L384" title="All 2 branches missed.">                    } else if (rc == Double.class) {</span>
+<span class="nc" id="L385">                        lv = new Double(((Number)lv).doubleValue());</span>
+                    } else {
+<span class="nc" id="L387">                        return Boolean.FALSE;</span>
+                    }
+<span class="pc bpc" id="L389" title="1 of 2 branches missed.">                } else if (lc == Integer.class) {</span>
+<span class="nc bnc" id="L390" title="All 2 branches missed.">                    if (rc == Long.class) {</span>
+<span class="nc" id="L391">                        lv = Long.valueOf(((Number)lv).longValue());</span>
+<span class="nc bnc" id="L392" title="All 2 branches missed.">                    } else if (rc == Float.class) {</span>
+<span class="nc" id="L393">                        lv = new Float(((Number)lv).floatValue());</span>
+<span class="nc bnc" id="L394" title="All 2 branches missed.">                    } else if (rc == Double.class) {</span>
+<span class="nc" id="L395">                        lv = new Double(((Number)lv).doubleValue());</span>
+                    } else {
+<span class="nc" id="L397">                        return Boolean.FALSE;</span>
+                    }
+<span class="fc bfc" id="L399" title="All 2 branches covered.">                } else if (lc == Long.class) {</span>
+<span class="pc bpc" id="L400" title="1 of 2 branches missed.">                    if (rc == Integer.class) {</span>
+<span class="fc" id="L401">                        rv = Long.valueOf(((Number)rv).longValue());</span>
+<span class="nc bnc" id="L402" title="All 2 branches missed.">                    } else if (rc == Float.class) {</span>
+<span class="nc" id="L403">                        lv = new Float(((Number)lv).floatValue());</span>
+<span class="nc bnc" id="L404" title="All 2 branches missed.">                    } else if (rc == Double.class) {</span>
+<span class="nc" id="L405">                        lv = new Double(((Number)lv).doubleValue());</span>
+                    } else {
+<span class="nc" id="L407">                        return Boolean.FALSE;</span>
+                    }
+<span class="fc bfc" id="L409" title="All 2 branches covered.">                } else if (lc == Float.class) {</span>
+<span class="pc bpc" id="L410" title="1 of 2 branches missed.">                    if (rc == Integer.class) {</span>
+<span class="fc" id="L411">                        rv = new Float(((Number)rv).floatValue());</span>
+<span class="nc bnc" id="L412" title="All 2 branches missed.">                    } else if (rc == Long.class) {</span>
+<span class="nc" id="L413">                        rv = new Float(((Number)rv).floatValue());</span>
+<span class="nc bnc" id="L414" title="All 2 branches missed.">                    } else if (rc == Double.class) {</span>
+<span class="nc" id="L415">                        lv = new Double(((Number)lv).doubleValue());</span>
+                    } else {
+<span class="nc" id="L417">                        return Boolean.FALSE;</span>
+                    }
+<span class="pc bpc" id="L419" title="1 of 2 branches missed.">                } else if (lc == Double.class) {</span>
+<span class="pc bpc" id="L420" title="1 of 2 branches missed.">                    if (rc == Integer.class) {</span>
+<span class="fc" id="L421">                        rv = new Double(((Number)rv).doubleValue());</span>
+<span class="nc bnc" id="L422" title="All 2 branches missed.">                    } else if (rc == Long.class) {</span>
+<span class="nc" id="L423">                        rv = new Double(((Number)rv).doubleValue());</span>
+<span class="nc bnc" id="L424" title="All 2 branches missed.">                    } else if (rc == Float.class) {</span>
+<span class="nc" id="L425">                        rv = new Double(((Number)rv).doubleValue());</span>
+                    } else {
+<span class="nc" id="L427">                        return Boolean.FALSE;</span>
+                    }
+                } else {
+<span class="nc" id="L430">                    return Boolean.FALSE;</span>
+                }
+<span class="nc" id="L432">            } catch (NumberFormatException e) {</span>
+<span class="nc" id="L433">                return Boolean.FALSE;</span>
+<span class="fc" id="L434">            }</span>
+        }
+
+<span class="fc bfc" id="L437" title="All 2 branches covered.">        return asBoolean(lv.compareTo(rv)) ? Boolean.TRUE : Boolean.FALSE;</span>
+    }
+
+    protected abstract boolean asBoolean(int answer);
+
+    @Override
+    public boolean matches(Filterable message) throws FilterException {
+<span class="fc" id="L444">        Object object = evaluate(message);</span>
+<span class="pc bpc" id="L445" title="1 of 4 branches missed.">        return object != null &amp;&amp; object == Boolean.TRUE;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

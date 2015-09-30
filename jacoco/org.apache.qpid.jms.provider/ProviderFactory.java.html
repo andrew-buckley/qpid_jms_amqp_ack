@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ProviderFactory.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider</a> &gt; <span class="el_source">ProviderFactory.java</span></div><h1>ProviderFactory.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider;
+
+import java.io.IOException;
+import java.net.URI;
+
+import org.apache.qpid.jms.util.FactoryFinder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Interface that all JMS Providers must implement.
+ */
+<span class="fc" id="L29">public abstract class ProviderFactory {</span>
+
+<span class="fc" id="L31">    private static final Logger LOG = LoggerFactory.getLogger(ProviderFactory.class);</span>
+
+<span class="fc" id="L33">    private static final FactoryFinder&lt;ProviderFactory&gt; PROVIDER_FACTORY_FINDER =</span>
+        new FactoryFinder&lt;ProviderFactory&gt;(ProviderFactory.class,
+            &quot;META-INF/services/&quot; + ProviderFactory.class.getPackage().getName().replace(&quot;.&quot;, &quot;/&quot;) + &quot;/&quot;);
+
+    /**
+     * Creates an instance of the given AsyncProvider and configures it using the
+     * properties set on the given remote broker URI.
+     *
+     * @param remoteURI
+     *        The URI used to connect to a remote Broker.
+     *
+     * @return a new AsyncProvider instance.
+     *
+     * @throws Exception if an error occurs while creating the Provider instance.
+     */
+    public abstract Provider createProvider(URI remoteURI) throws Exception;
+
+    /**
+     * @return the name of this JMS Provider.
+     */
+    public abstract String getName();
+
+    /**
+     * Static create method that performs the ProviderFactory search and handles the
+     * configuration and setup.
+     *
+     * @param remoteURI
+     *        the URI of the remote peer.
+     *
+     * @return a new AsyncProvider instance that is ready for use.
+     *
+     * @throws Exception if an error occurs while creating the AsyncProvider instance.
+     */
+    public static Provider create(URI remoteURI) throws Exception {
+<span class="fc" id="L67">        Provider result = null;</span>
+
+        try {
+<span class="fc" id="L70">            ProviderFactory factory = findProviderFactory(remoteURI);</span>
+<span class="fc" id="L71">            result = factory.createProvider(remoteURI);</span>
+<span class="fc" id="L72">        } catch (Exception ex) {</span>
+<span class="fc" id="L73">            LOG.error(&quot;Failed to create Provider instance for {}, due to: {}&quot;, remoteURI.getScheme(), ex);</span>
+<span class="fc" id="L74">            LOG.trace(&quot;Error: &quot;, ex);</span>
+<span class="fc" id="L75">            throw ex;</span>
+<span class="fc" id="L76">        }</span>
+
+<span class="fc" id="L78">        return result;</span>
+    }
+
+    /**
+     * Searches for a ProviderFactory by using the scheme from the given URI.
+     *
+     * The search first checks the local cache of provider factories before moving on
+     * to search in the class path.
+     *
+     * @param location
+     *        The URI whose scheme will be used to locate a ProviderFactory.
+     *
+     * @return a provider factory instance matching the URI's scheme.
+     *
+     * @throws IOException if an error occurs while locating the factory.
+     */
+    public static ProviderFactory findProviderFactory(URI location) throws IOException {
+<span class="fc" id="L95">        String scheme = location.getScheme();</span>
+<span class="pc bpc" id="L96" title="1 of 2 branches missed.">        if (scheme == null) {</span>
+<span class="nc" id="L97">            throw new IOException(&quot;No Provider scheme specified.&quot;);</span>
+        }
+
+<span class="fc" id="L100">        ProviderFactory factory = null;</span>
+        try {
+<span class="fc" id="L102">            factory = PROVIDER_FACTORY_FINDER.newInstance(scheme);</span>
+<span class="fc" id="L103">        } catch (Throwable e) {</span>
+<span class="fc" id="L104">            throw new IOException(&quot;Provider scheme NOT recognized: [&quot; + scheme + &quot;]&quot;, e);</span>
+<span class="fc" id="L105">        }</span>
+
+<span class="fc" id="L107">        return factory;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

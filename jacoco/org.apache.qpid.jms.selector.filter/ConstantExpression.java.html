@@ -1,0 +1,164 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ConstantExpression.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.selector.filter</a> &gt; <span class="el_source">ConstantExpression.java</span></div><h1>ConstantExpression.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.selector.filter;
+
+import java.math.BigDecimal;
+
+/**
+ * Represents a constant expression
+ */
+public class ConstantExpression implements Expression {
+
+    static class BooleanConstantExpression extends ConstantExpression implements BooleanExpression {
+        public BooleanConstantExpression(Object value) {
+<span class="fc" id="L28">            super(value);</span>
+<span class="fc" id="L29">        }</span>
+
+        @Override
+        public boolean matches(Filterable message) throws FilterException {
+<span class="nc" id="L33">            Object object = evaluate(message);</span>
+<span class="nc bnc" id="L34" title="All 4 branches missed.">            return object != null &amp;&amp; object == Boolean.TRUE;</span>
+        }
+    }
+
+<span class="fc" id="L38">    public static final BooleanConstantExpression NULL = new BooleanConstantExpression(null);</span>
+<span class="fc" id="L39">    public static final BooleanConstantExpression TRUE = new BooleanConstantExpression(Boolean.TRUE);</span>
+<span class="fc" id="L40">    public static final BooleanConstantExpression FALSE = new BooleanConstantExpression(Boolean.FALSE);</span>
+
+    private final Object value;
+
+<span class="fc" id="L44">    public ConstantExpression(Object value) {</span>
+<span class="fc" id="L45">        this.value = value;</span>
+<span class="fc" id="L46">    }</span>
+
+    public static ConstantExpression createFromDecimal(String text) {
+
+        // Strip off the 'l' or 'L' if needed.
+<span class="pc bpc" id="L51" title="2 of 4 branches missed.">        if (text.endsWith(&quot;l&quot;) || text.endsWith(&quot;L&quot;)) {</span>
+<span class="nc" id="L52">            text = text.substring(0, text.length() - 1);</span>
+        }
+
+        Number value;
+        try {
+<span class="fc" id="L57">            value = Long.valueOf(text);</span>
+<span class="nc" id="L58">        } catch (NumberFormatException e) {</span>
+            // The number may be too big to fit in a long.
+<span class="nc" id="L60">            value = new BigDecimal(text);</span>
+<span class="fc" id="L61">        }</span>
+
+<span class="fc" id="L63">        long l = value.longValue();</span>
+<span class="pc bpc" id="L64" title="2 of 4 branches missed.">        if (Integer.MIN_VALUE &lt;= l &amp;&amp; l &lt;= Integer.MAX_VALUE) {</span>
+<span class="fc" id="L65">            value = Integer.valueOf(value.intValue());</span>
+        }
+<span class="fc" id="L67">        return new ConstantExpression(value);</span>
+    }
+
+    public static ConstantExpression createFromHex(String text) {
+<span class="nc" id="L71">        Number value = Long.valueOf(Long.parseLong(text.substring(2), 16));</span>
+<span class="nc" id="L72">        long l = value.longValue();</span>
+<span class="nc bnc" id="L73" title="All 4 branches missed.">        if (Integer.MIN_VALUE &lt;= l &amp;&amp; l &lt;= Integer.MAX_VALUE) {</span>
+<span class="nc" id="L74">            value = Integer.valueOf(value.intValue());</span>
+        }
+<span class="nc" id="L76">        return new ConstantExpression(value);</span>
+    }
+
+    public static ConstantExpression createFromOctal(String text) {
+<span class="nc" id="L80">        Number value = Long.valueOf(Long.parseLong(text, 8));</span>
+<span class="nc" id="L81">        long l = value.longValue();</span>
+<span class="nc bnc" id="L82" title="All 4 branches missed.">        if (Integer.MIN_VALUE &lt;= l &amp;&amp; l &lt;= Integer.MAX_VALUE) {</span>
+<span class="nc" id="L83">            value = Integer.valueOf(value.intValue());</span>
+        }
+<span class="nc" id="L85">        return new ConstantExpression(value);</span>
+    }
+
+    public static ConstantExpression createFloat(String text) {
+<span class="fc" id="L89">        Number value = new Double(text);</span>
+<span class="fc" id="L90">        return new ConstantExpression(value);</span>
+    }
+
+    @Override
+    public Object evaluate(Filterable message) throws FilterException {
+<span class="fc" id="L95">        return value;</span>
+    }
+
+    public Object getValue() {
+<span class="fc" id="L99">        return value;</span>
+    }
+
+    /**
+     * @see java.lang.Object#toString()
+     */
+    @Override
+    public String toString() {
+<span class="pc bpc" id="L107" title="1 of 2 branches missed.">        if (value == null) {</span>
+<span class="nc" id="L108">            return &quot;NULL&quot;;</span>
+        }
+<span class="pc bpc" id="L110" title="1 of 2 branches missed.">        if (value instanceof Boolean) {</span>
+<span class="nc bnc" id="L111" title="All 2 branches missed.">            return ((Boolean)value).booleanValue() ? &quot;TRUE&quot; : &quot;FALSE&quot;;</span>
+        }
+<span class="pc bpc" id="L113" title="1 of 2 branches missed.">        if (value instanceof String) {</span>
+<span class="nc" id="L114">            return encodeString((String)value);</span>
+        }
+<span class="fc" id="L116">        return value.toString();</span>
+    }
+
+    /**
+     * TODO: more efficient hashCode()
+     *
+     * @see java.lang.Object#hashCode()
+     */
+    @Override
+    public int hashCode() {
+<span class="nc" id="L126">        return toString().hashCode();</span>
+    }
+
+    /**
+     * TODO: more efficient hashCode()
+     *
+     * @see java.lang.Object#equals(java.lang.Object)
+     */
+    @Override
+    public boolean equals(Object o) {
+
+<span class="nc bnc" id="L137" title="All 4 branches missed.">        if (o == null || !this.getClass().equals(o.getClass())) {</span>
+<span class="nc" id="L138">            return false;</span>
+        }
+<span class="nc" id="L140">        return toString().equals(o.toString());</span>
+    }
+
+    /**
+     * Encodes the value of string so that it looks like it would look like when
+     * it was provided in a selector.
+     *
+     * @param s the original string
+     * @return the encoded String
+     */
+    public static String encodeString(String s) {
+<span class="nc" id="L151">        StringBuffer b = new StringBuffer();</span>
+<span class="nc" id="L152">        b.append('\'');</span>
+<span class="nc bnc" id="L153" title="All 2 branches missed.">        for (int i = 0; i &lt; s.length(); i++) {</span>
+<span class="nc" id="L154">            char c = s.charAt(i);</span>
+<span class="nc bnc" id="L155" title="All 2 branches missed.">            if (c == '\'') {</span>
+<span class="nc" id="L156">                b.append(c);</span>
+            }
+<span class="nc" id="L158">            b.append(c);</span>
+        }
+<span class="nc" id="L160">        b.append('\'');</span>
+<span class="nc" id="L161">        return b.toString();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

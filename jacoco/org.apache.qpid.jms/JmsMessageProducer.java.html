@@ -1,0 +1,345 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>JmsMessageProducer.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms</a> &gt; <span class="el_source">JmsMessageProducer.java</span></div><h1>JmsMessageProducer.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms;
+
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+
+import javax.jms.DeliveryMode;
+import javax.jms.Destination;
+import javax.jms.IllegalStateException;
+import javax.jms.InvalidDestinationException;
+import javax.jms.JMSException;
+import javax.jms.Message;
+import javax.jms.MessageProducer;
+
+import org.apache.qpid.jms.meta.JmsProducerId;
+import org.apache.qpid.jms.meta.JmsProducerInfo;
+import org.apache.qpid.jms.provider.Provider;
+import org.apache.qpid.jms.provider.ProviderFuture;
+
+/**
+ * Implementation of a Jms MessageProducer
+ */
+public class JmsMessageProducer implements MessageProducer {
+
+    protected final JmsSession session;
+    protected final JmsConnection connection;
+    protected JmsProducerInfo producerInfo;
+    protected final boolean flexibleDestination;
+<span class="fc" id="L44">    protected int deliveryMode = DeliveryMode.PERSISTENT;</span>
+<span class="fc" id="L45">    protected int priority = Message.DEFAULT_PRIORITY;</span>
+<span class="fc" id="L46">    protected long timeToLive = Message.DEFAULT_TIME_TO_LIVE;</span>
+<span class="fc" id="L47">    protected final AtomicBoolean closed = new AtomicBoolean();</span>
+    protected boolean disableMessageId;
+    protected boolean disableTimestamp;
+<span class="fc" id="L50">    protected final AtomicLong messageSequence = new AtomicLong();</span>
+    protected Exception failureCause;
+
+<span class="fc" id="L53">    protected JmsMessageProducer(JmsProducerId producerId, JmsSession session, JmsDestination destination) throws JMSException {</span>
+<span class="fc" id="L54">        this.session = session;</span>
+<span class="fc" id="L55">        this.connection = session.getConnection();</span>
+<span class="fc bfc" id="L56" title="All 2 branches covered.">        this.flexibleDestination = destination == null;</span>
+<span class="fc" id="L57">        this.producerInfo = new JmsProducerInfo(producerId);</span>
+<span class="fc" id="L58">        this.producerInfo.setDestination(destination);</span>
+
+<span class="fc" id="L60">        session.getConnection().createResource(producerInfo);</span>
+<span class="fc" id="L61">    }</span>
+
+    /**
+     * Close the producer
+     *
+     * @throws JMSException
+     *
+     * @see javax.jms.MessageProducer#close()
+     */
+    @Override
+    public void close() throws JMSException {
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        if (!closed.get()) {</span>
+<span class="fc" id="L73">            doClose();</span>
+        }
+<span class="fc" id="L75">    }</span>
+
+    /**
+     * Called to initiate shutdown of Producer resources and request that the remote
+     * peer remove the registered producer.
+     *
+     * @throws JMSException
+     */
+    protected void doClose() throws JMSException {
+<span class="fc" id="L84">        shutdown();</span>
+<span class="fc" id="L85">        this.connection.destroyResource(producerInfo);</span>
+<span class="fc" id="L86">    }</span>
+
+    /**
+     * Called to release all producer resources without requiring a destroy request
+     * to be sent to the remote peer.  This is most commonly needed when the parent
+     * Session is closing.
+     *
+     * @throws JMSException
+     */
+    protected void shutdown() throws JMSException {
+<span class="fc" id="L96">        shutdown(null);</span>
+<span class="fc" id="L97">    }</span>
+
+    protected void shutdown(Exception cause) throws JMSException {
+<span class="pc bpc" id="L100" title="1 of 2 branches missed.">        if (closed.compareAndSet(false, true)) {</span>
+<span class="fc" id="L101">            failureCause = cause;</span>
+<span class="fc" id="L102">            session.remove(this);</span>
+        }
+<span class="fc" id="L104">    }</span>
+
+    /**
+     * @return the delivery mode
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#getDeliveryMode()
+     */
+    @Override
+    public int getDeliveryMode() throws JMSException {
+<span class="fc" id="L113">        checkClosed();</span>
+<span class="fc" id="L114">        return this.deliveryMode;</span>
+    }
+
+    /**
+     * @return the destination
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#getDestination()
+     */
+    @Override
+    public Destination getDestination() throws JMSException {
+<span class="fc" id="L124">        checkClosed();</span>
+<span class="fc" id="L125">        return this.producerInfo.getDestination();</span>
+    }
+
+    /**
+     * @return true if disableIds is set
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#getDisableMessageID()
+     */
+    @Override
+    public boolean getDisableMessageID() throws JMSException {
+<span class="fc" id="L135">        checkClosed();</span>
+<span class="fc" id="L136">        return this.disableMessageId;</span>
+    }
+
+    /**
+     * @return true if disable timestamp is set
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#getDisableMessageTimestamp()
+     */
+    @Override
+    public boolean getDisableMessageTimestamp() throws JMSException {
+<span class="fc" id="L146">        checkClosed();</span>
+<span class="fc" id="L147">        return this.disableTimestamp;</span>
+    }
+
+    /**
+     * @return the priority
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#getPriority()
+     */
+    @Override
+    public int getPriority() throws JMSException {
+<span class="fc" id="L157">        checkClosed();</span>
+<span class="fc" id="L158">        return this.priority;</span>
+    }
+
+    /**
+     * @return timeToLive
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#getTimeToLive()
+     */
+    @Override
+    public long getTimeToLive() throws JMSException {
+<span class="fc" id="L168">        checkClosed();</span>
+<span class="fc" id="L169">        return this.timeToLive;</span>
+    }
+
+    /**
+     * @param message
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#send(javax.jms.Message)
+     */
+    @Override
+    public void send(Message message) throws JMSException {
+<span class="fc" id="L179">        send(message, this.deliveryMode, this.priority, this.timeToLive);</span>
+<span class="fc" id="L180">    }</span>
+
+    /**
+     * @param message
+     * @param deliveryMode
+     * @param priority
+     * @param timeToLive
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#send(javax.jms.Message, int, int, long)
+     */
+    @Override
+    public void send(Message message, int deliveryMode, int priority, long timeToLive) throws JMSException {
+<span class="fc" id="L192">        checkClosed();</span>
+
+<span class="fc bfc" id="L194" title="All 2 branches covered.">        if (flexibleDestination) {</span>
+<span class="fc" id="L195">            throw new UnsupportedOperationException(&quot;Using this method is not supported on producers created without an explicit Destination&quot;);</span>
+        }
+
+<span class="fc" id="L198">        sendMessage(producerInfo.getDestination(), message, deliveryMode, priority, timeToLive);</span>
+<span class="fc" id="L199">    }</span>
+
+    /**
+     * @param destination
+     * @param message
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#send(javax.jms.Destination,
+     *      javax.jms.Message)
+     */
+    @Override
+    public void send(Destination destination, Message message) throws JMSException {
+<span class="fc" id="L210">        send(destination, message, this.deliveryMode, this.priority, this.timeToLive);</span>
+<span class="fc" id="L211">    }</span>
+
+    /**
+     * @param destination
+     * @param message
+     * @param deliveryMode
+     * @param priority
+     * @param timeToLive
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#send(javax.jms.Destination,
+     *      javax.jms.Message, int, int, long)
+     */
+    @Override
+    public void send(Destination destination, Message message, int deliveryMode, int priority, long timeToLive) throws JMSException {
+<span class="fc" id="L225">        checkClosed();</span>
+
+<span class="fc bfc" id="L227" title="All 2 branches covered.">        if (!flexibleDestination) {</span>
+<span class="fc" id="L228">            throw new UnsupportedOperationException(&quot;Using this method is not supported on producers created with an explicit Destination.&quot;);</span>
+        }
+
+<span class="fc" id="L231">        sendMessage(destination, message, deliveryMode, priority, timeToLive);</span>
+<span class="fc" id="L232">    }</span>
+
+    private void sendMessage(Destination destination, Message message, int deliveryMode, int priority, long timeToLive) throws JMSException {
+<span class="fc bfc" id="L235" title="All 2 branches covered.">        if (destination == null) {</span>
+<span class="fc" id="L236">            throw new InvalidDestinationException(&quot;Don't understand null destinations&quot;);</span>
+        }
+
+<span class="fc" id="L239">        this.session.send(this, destination, message, deliveryMode, priority, timeToLive, disableMessageId, disableTimestamp);</span>
+<span class="fc" id="L240">    }</span>
+
+    /**
+     * @param deliveryMode
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#setDeliveryMode(int)
+     */
+    @Override
+    public void setDeliveryMode(int deliveryMode) throws JMSException {
+<span class="fc" id="L249">        checkClosed();</span>
+<span class="fc" id="L250">        this.deliveryMode = deliveryMode;</span>
+<span class="fc" id="L251">    }</span>
+
+    /**
+     * @param value
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#setDisableMessageID(boolean)
+     */
+    @Override
+    public void setDisableMessageID(boolean value) throws JMSException {
+<span class="fc" id="L260">        checkClosed();</span>
+<span class="fc" id="L261">        this.disableMessageId = value;</span>
+<span class="fc" id="L262">    }</span>
+
+    /**
+     * @param value
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#setDisableMessageTimestamp(boolean)
+     */
+    @Override
+    public void setDisableMessageTimestamp(boolean value) throws JMSException {
+<span class="fc" id="L271">        checkClosed();</span>
+<span class="fc" id="L272">        this.disableTimestamp = value;</span>
+<span class="fc" id="L273">    }</span>
+
+    /**
+     * @param defaultPriority
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#setPriority(int)
+     */
+    @Override
+    public void setPriority(int defaultPriority) throws JMSException {
+<span class="fc" id="L282">        checkClosed();</span>
+<span class="fc" id="L283">        this.priority = defaultPriority;</span>
+<span class="fc" id="L284">    }</span>
+
+    /**
+     * @param timeToLive
+     * @throws JMSException
+     * @see javax.jms.MessageProducer#setTimeToLive(long)
+     */
+    @Override
+    public void setTimeToLive(long timeToLive) throws JMSException {
+<span class="fc" id="L293">        checkClosed();</span>
+<span class="fc" id="L294">        this.timeToLive = timeToLive;</span>
+<span class="fc" id="L295">    }</span>
+
+    /**
+     * @return the producer's assigned JmsProducerId.
+     */
+    protected JmsProducerId getProducerId() {
+<span class="fc" id="L301">        return this.producerInfo.getProducerId();</span>
+    }
+
+    /**
+     * @return the next logical sequence for a Message sent from this Producer.
+     */
+    protected long getNextMessageSequence() {
+<span class="fc" id="L308">        return this.messageSequence.incrementAndGet();</span>
+    }
+
+    protected void checkClosed() throws IllegalStateException {
+<span class="fc bfc" id="L312" title="All 2 branches covered.">        if (closed.get()) {</span>
+<span class="fc" id="L313">            IllegalStateException jmsEx = null;</span>
+
+<span class="fc bfc" id="L315" title="All 2 branches covered.">            if (failureCause == null) {</span>
+<span class="fc" id="L316">                jmsEx = new IllegalStateException(&quot;The MessageProducer is closed&quot;);</span>
+            } else {
+<span class="fc" id="L318">                jmsEx = new IllegalStateException(&quot;The MessageProducer was closed due to an unrecoverable error.&quot;);</span>
+<span class="fc" id="L319">                jmsEx.initCause(failureCause);</span>
+            }
+
+<span class="fc" id="L322">            throw jmsEx;</span>
+        }
+<span class="fc" id="L324">    }</span>
+
+    ////////////////////////////////////////////////////////////////////////////
+    // Connection interruption handlers.
+    ////////////////////////////////////////////////////////////////////////////
+
+    protected void onConnectionInterrupted() {
+<span class="fc" id="L331">    }</span>
+
+    protected void onConnectionRecovery(Provider provider) throws Exception {
+<span class="nc" id="L334">        ProviderFuture request = new ProviderFuture();</span>
+<span class="nc" id="L335">        provider.create(producerInfo, request);</span>
+<span class="nc" id="L336">        request.sync();</span>
+<span class="nc" id="L337">    }</span>
+
+    protected void onConnectionRecovered(Provider provider) throws Exception {
+<span class="nc" id="L340">    }</span>
+
+    protected void onConnectionRestored() {
+<span class="nc" id="L343">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

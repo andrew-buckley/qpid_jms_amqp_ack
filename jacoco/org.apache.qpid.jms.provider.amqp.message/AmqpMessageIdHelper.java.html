@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpMessageIdHelper.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp.message</a> &gt; <span class="el_source">AmqpMessageIdHelper.java</span></div><h1>AmqpMessageIdHelper.java</h1><pre class="source lang-java linenums">/*
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * &quot;License&quot;); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * &quot;AS IS&quot; BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ *
+ */
+package org.apache.qpid.jms.provider.amqp.message;
+
+import java.nio.ByteBuffer;
+import java.util.UUID;
+
+import org.apache.qpid.jms.exceptions.IdConversionException;
+import org.apache.qpid.proton.amqp.Binary;
+import org.apache.qpid.proton.amqp.UnsignedLong;
+
+/**
+ * Helper class for identifying and converting message-id and correlation-id values between
+ * the AMQP types and the Strings values used by JMS.
+ *
+ * &lt;p&gt;AMQP messages allow for 4 types of message-id/correlation-id: message-id-string, message-id-binary,
+ * message-id-uuid, or message-id-ulong. In order to accept or return a string representation of these
+ * for interoperability with other AMQP clients, the following encoding can be used after removing or
+ * before adding the &quot;ID:&quot; prefix used for a JMSMessageID value:&lt;br&gt;
+ *
+ * {@literal &quot;AMQP_BINARY:&lt;hex representation of binary content&gt;&quot;}&lt;br&gt;
+ * {@literal &quot;AMQP_UUID:&lt;string representation of uuid&gt;&quot;}&lt;br&gt;
+ * {@literal &quot;AMQP_ULONG:&lt;string representation of ulong&gt;&quot;}&lt;br&gt;
+ * {@literal &quot;AMQP_STRING:&lt;string&gt;&quot;}&lt;br&gt;
+ *
+ * &lt;p&gt;The AMQP_STRING encoding exists only for escaping message-id-string values that happen to begin
+ * with one of the encoding prefixes (including AMQP_STRING itself). It MUST NOT be used otherwise.
+ *
+ * &lt;p&gt;When provided a string for conversion which attempts to identify itself as an encoded binary, uuid, or
+ * ulong but can't be converted into the indicated format, an exception will be thrown.
+ *
+ */
+<span class="fc" id="L51">public class AmqpMessageIdHelper {</span>
+<span class="fc" id="L52">    public static final AmqpMessageIdHelper INSTANCE = new AmqpMessageIdHelper();</span>
+
+    public static final String AMQP_STRING_PREFIX = &quot;AMQP_STRING:&quot;;
+    public static final String AMQP_UUID_PREFIX = &quot;AMQP_UUID:&quot;;
+    public static final String AMQP_ULONG_PREFIX = &quot;AMQP_ULONG:&quot;;
+    public static final String AMQP_BINARY_PREFIX = &quot;AMQP_BINARY:&quot;;
+    public static final String JMS_ID_PREFIX = &quot;ID:&quot;;
+
+<span class="fc" id="L60">    private static final int JMS_ID_PREFIX_LENGTH = JMS_ID_PREFIX.length();</span>
+<span class="fc" id="L61">    private static final int AMQP_UUID_PREFIX_LENGTH = AMQP_UUID_PREFIX.length();</span>
+<span class="fc" id="L62">    private static final int AMQP_ULONG_PREFIX_LENGTH = AMQP_ULONG_PREFIX.length();</span>
+<span class="fc" id="L63">    private static final int AMQP_STRING_PREFIX_LENGTH = AMQP_STRING_PREFIX.length();</span>
+<span class="fc" id="L64">    private static final int AMQP_BINARY_PREFIX_LENGTH = AMQP_BINARY_PREFIX.length();</span>
+<span class="fc" id="L65">    private static final char[] HEX_CHARS = &quot;0123456789ABCDEF&quot;.toCharArray();</span>
+
+    /**
+     * Checks whether the given string begins with &quot;ID:&quot; prefix used to denote a JMSMessageID
+     *
+     * @param string the string to check
+     * @return true if and only id the string begins with &quot;ID:&quot;
+     */
+    public boolean hasMessageIdPrefix(String string) {
+<span class="fc bfc" id="L74" title="All 2 branches covered.">        if (string == null) {</span>
+<span class="fc" id="L75">            return false;</span>
+        }
+
+<span class="fc" id="L78">        return string.startsWith(JMS_ID_PREFIX);</span>
+    }
+
+    /**
+     * Returns the suffix of the given string after removing the first &quot;ID:&quot; prefix (if present).
+     *
+     * @param id the string to process
+     * @return the suffix, or the original String if the &quot;ID:&quot; prefix is not present
+     */
+    public String stripMessageIdPrefix(String id) {
+<span class="fc bfc" id="L88" title="All 2 branches covered.">        if (hasMessageIdPrefix(id)) {</span>
+<span class="fc" id="L89">            return strip(id, JMS_ID_PREFIX_LENGTH);</span>
+        } else {
+<span class="fc" id="L91">            return id;</span>
+        }
+    }
+
+    private String strip(String id, int numChars) {
+<span class="fc" id="L96">        return id.substring(numChars);</span>
+    }
+
+    /**
+     * Takes the provided amqp messageId style object, and convert it to a base string.
+     * Encodes type information as a prefix where necessary to convey or escape the type
+     * of the provided object.
+     *
+     * @param messageId the object to process
+     * @return the base string to be used in creating the actual JMS id.
+     */
+    public String toBaseMessageIdString(Object messageId) {
+<span class="fc bfc" id="L108" title="All 2 branches covered.">        if (messageId == null) {</span>
+<span class="fc" id="L109">            return null;</span>
+<span class="fc bfc" id="L110" title="All 2 branches covered.">        } else if (messageId instanceof String) {</span>
+<span class="fc" id="L111">            String stringId = (String) messageId;</span>
+
+            // If the given string has a type encoding prefix,
+            // we need to escape it as an encoded string (even if
+            // the existing encoding prefix was also for string)
+<span class="fc bfc" id="L116" title="All 2 branches covered.">            if (hasTypeEncodingPrefix(stringId)) {</span>
+<span class="fc" id="L117">                return AMQP_STRING_PREFIX + stringId;</span>
+            } else {
+<span class="fc" id="L119">                return stringId;</span>
+            }
+<span class="fc bfc" id="L121" title="All 2 branches covered.">        } else if (messageId instanceof UUID) {</span>
+<span class="fc" id="L122">            return AMQP_UUID_PREFIX + messageId.toString();</span>
+<span class="fc bfc" id="L123" title="All 2 branches covered.">        } else if (messageId instanceof UnsignedLong) {</span>
+<span class="fc" id="L124">            return AMQP_ULONG_PREFIX + messageId.toString();</span>
+<span class="fc bfc" id="L125" title="All 2 branches covered.">        } else if (messageId instanceof Binary) {</span>
+<span class="fc" id="L126">            ByteBuffer dup = ((Binary) messageId).asByteBuffer();</span>
+
+<span class="fc" id="L128">            byte[] bytes = new byte[dup.remaining()];</span>
+<span class="fc" id="L129">            dup.get(bytes);</span>
+
+<span class="fc" id="L131">            String hex = convertBinaryToHexString(bytes);</span>
+
+<span class="fc" id="L133">            return AMQP_BINARY_PREFIX + hex;</span>
+        } else {
+<span class="fc" id="L135">            throw new IllegalArgumentException(&quot;Unsupported type provided: &quot; + messageId.getClass());</span>
+        }
+    }
+
+    private boolean hasTypeEncodingPrefix(String stringId) {
+<span class="fc bfc" id="L140" title="All 8 branches covered.">        return hasAmqpBinaryPrefix(stringId) ||</span>
+                    hasAmqpUuidPrefix(stringId) ||
+                        hasAmqpUlongPrefix(stringId) ||
+                            hasAmqpStringPrefix(stringId);
+    }
+
+    private boolean hasAmqpStringPrefix(String stringId) {
+<span class="fc" id="L147">        return stringId.startsWith(AMQP_STRING_PREFIX);</span>
+    }
+
+    private boolean hasAmqpUlongPrefix(String stringId) {
+<span class="fc" id="L151">        return stringId.startsWith(AMQP_ULONG_PREFIX);</span>
+    }
+
+    private boolean hasAmqpUuidPrefix(String stringId) {
+<span class="fc" id="L155">        return stringId.startsWith(AMQP_UUID_PREFIX);</span>
+    }
+
+    private boolean hasAmqpBinaryPrefix(String stringId) {
+<span class="fc" id="L159">        return stringId.startsWith(AMQP_BINARY_PREFIX);</span>
+    }
+
+    /**
+     * Takes the provided base id string and return the appropriate amqp messageId style object.
+     * Converts the type based on any relevant encoding information found as a prefix.
+     *
+     * @param baseId the object to be converted
+     * @return the amqp messageId style object
+     * @throws IdConversionException if the provided baseId String indicates an encoded type but can't be converted to that type. 
+     */
+    public Object toIdObject(String baseId) throws IdConversionException {
+<span class="fc bfc" id="L171" title="All 2 branches covered.">        if (baseId == null) {</span>
+<span class="fc" id="L172">            return null;</span>
+        }
+
+        try {
+<span class="fc bfc" id="L176" title="All 2 branches covered.">            if (hasAmqpUuidPrefix(baseId)) {</span>
+<span class="fc" id="L177">                String uuidString = strip(baseId, AMQP_UUID_PREFIX_LENGTH);</span>
+<span class="fc" id="L178">                return UUID.fromString(uuidString);</span>
+<span class="fc bfc" id="L179" title="All 2 branches covered.">            } else if (hasAmqpUlongPrefix(baseId)) {</span>
+<span class="fc" id="L180">                String longString = strip(baseId, AMQP_ULONG_PREFIX_LENGTH);</span>
+<span class="fc" id="L181">                return UnsignedLong.valueOf(longString);</span>
+<span class="fc bfc" id="L182" title="All 2 branches covered.">            } else if (hasAmqpStringPrefix(baseId)) {</span>
+<span class="fc" id="L183">                return strip(baseId, AMQP_STRING_PREFIX_LENGTH);</span>
+<span class="fc bfc" id="L184" title="All 2 branches covered.">            } else if (hasAmqpBinaryPrefix(baseId)) {</span>
+<span class="fc" id="L185">                String hexString = strip(baseId, AMQP_BINARY_PREFIX_LENGTH);</span>
+<span class="fc" id="L186">                byte[] bytes = convertHexStringToBinary(hexString);</span>
+<span class="fc" id="L187">                return new Binary(bytes);</span>
+            } else {
+                // We have a string without any type prefix, transmit it as-is.
+<span class="fc" id="L190">                return baseId;</span>
+            }
+<span class="fc" id="L192">        } catch (IllegalArgumentException e) {</span>
+<span class="fc" id="L193">            throw new IdConversionException(&quot;Unable to convert ID value&quot;, e);</span>
+        }
+    }
+
+    /**
+     * Convert the provided hex-string into a binary representation where each byte represents
+     * two characters of the hex string.
+     *
+     * The hex characters may be upper or lower case.
+     *
+     * @param hexString string to convert
+     * @return a byte array containing the binary representation
+     * @throws IllegalArgumentException if the provided String is a non-even length or contains non-hex characters
+     */
+    public byte[] convertHexStringToBinary(String hexString) throws IllegalArgumentException {
+<span class="fc" id="L208">        int length = hexString.length();</span>
+
+        // As each byte needs two characters in the hex encoding, the string must be an even length.
+<span class="fc bfc" id="L211" title="All 2 branches covered.">        if (length % 2 != 0) {</span>
+<span class="fc" id="L212">            throw new IllegalArgumentException(&quot;The provided hex String must be an even length, but was of length &quot; + length + &quot;: &quot; + hexString);</span>
+        }
+
+<span class="fc" id="L215">        byte[] binary = new byte[length / 2];</span>
+
+<span class="fc bfc" id="L217" title="All 2 branches covered.">        for (int i = 0; i &lt; length; i += 2) {</span>
+<span class="fc" id="L218">            char highBitsChar = hexString.charAt(i);</span>
+<span class="fc" id="L219">            char lowBitsChar = hexString.charAt(i + 1);</span>
+
+<span class="fc" id="L221">            int highBits = hexCharToInt(highBitsChar, hexString) &lt;&lt; 4;</span>
+<span class="fc" id="L222">            int lowBits = hexCharToInt(lowBitsChar, hexString);</span>
+
+<span class="fc" id="L224">            binary[i / 2] = (byte) (highBits + lowBits);</span>
+        }
+
+<span class="fc" id="L227">        return binary;</span>
+    }
+
+    private int hexCharToInt(char ch, String orig) throws IllegalArgumentException {
+<span class="fc bfc" id="L231" title="All 4 branches covered.">        if (ch &gt;= '0' &amp;&amp; ch &lt;= '9') {</span>
+            // subtract '0' to get difference in position as an int
+<span class="fc" id="L233">            return ch - '0';</span>
+<span class="fc bfc" id="L234" title="All 4 branches covered.">        } else if (ch &gt;= 'A' &amp;&amp; ch &lt;= 'F') {</span>
+            // subtract 'A' to get difference in position as an int
+            // and then add 10 for the offset of 'A'
+<span class="fc" id="L237">            return ch - 'A' + 10;</span>
+<span class="fc bfc" id="L238" title="All 4 branches covered.">        } else if (ch &gt;= 'a' &amp;&amp; ch &lt;= 'f') {</span>
+            // subtract 'a' to get difference in position as an int
+            // and then add 10 for the offset of 'a'
+<span class="fc" id="L241">            return ch - 'a' + 10;</span>
+        }
+
+<span class="fc" id="L244">        throw new IllegalArgumentException(&quot;The provided hex string contains non-hex character '&quot; + ch + &quot;': &quot; + orig);</span>
+    }
+
+    /**
+     * Convert the provided binary into a hex-string representation where each character
+     * represents 4 bits of the provided binary, i.e each byte requires two characters.
+     *
+     * The returned hex characters are upper-case.
+     *
+     * @param bytes binary to convert
+     * @return a String containing a hex representation of the bytes
+     */
+    public String convertBinaryToHexString(byte[] bytes) {
+        // Each byte is represented as 2 chars
+<span class="fc" id="L258">        StringBuilder builder = new StringBuilder(bytes.length * 2);</span>
+
+<span class="fc bfc" id="L260" title="All 2 branches covered.">        for (byte b : bytes) {</span>
+            // The byte will be expanded to int before shifting, replicating the
+            // sign bit, so mask everything beyond the first 4 bits afterwards
+<span class="fc" id="L263">            int highBitsInt = (b &gt;&gt; 4) &amp; 0xF;</span>
+            // We only want the first 4 bits
+<span class="fc" id="L265">            int lowBitsInt = b &amp; 0xF;</span>
+
+<span class="fc" id="L267">            builder.append(HEX_CHARS[highBitsInt]);</span>
+<span class="fc" id="L268">            builder.append(HEX_CHARS[lowBitsInt]);</span>
+        }
+
+<span class="fc" id="L271">        return builder.toString();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

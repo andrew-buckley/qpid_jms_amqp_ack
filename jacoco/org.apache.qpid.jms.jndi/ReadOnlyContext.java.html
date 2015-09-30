@@ -1,0 +1,454 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>ReadOnlyContext.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.jndi</a> &gt; <span class="el_source">ReadOnlyContext.java</span></div><h1>ReadOnlyContext.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.jndi;
+
+import java.io.Serializable;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Hashtable;
+import java.util.Iterator;
+import java.util.Map;
+import java.util.Map.Entry;
+
+import javax.naming.Binding;
+import javax.naming.CompositeName;
+import javax.naming.Context;
+import javax.naming.LinkRef;
+import javax.naming.Name;
+import javax.naming.NameClassPair;
+import javax.naming.NameNotFoundException;
+import javax.naming.NameParser;
+import javax.naming.NamingEnumeration;
+import javax.naming.NamingException;
+import javax.naming.NotContextException;
+import javax.naming.OperationNotSupportedException;
+import javax.naming.Reference;
+import javax.naming.spi.NamingManager;
+
+/**
+ * A read-only Context
+ * &lt;p&gt;
+ * This version assumes it and all its sub-context are read-only and any attempt
+ * to modify (e.g. through bind) will result in an
+ * OperationNotSupportedException. Each Context in the tree builds a cache of
+ * the entries in all sub-contexts to optimize the performance of lookup.
+ * &lt;p&gt;
+ * This implementation is intended to optimize the performance of lookup(String)
+ * to about the level of a HashMap get. It has been observed that the scheme
+ * resolution phase performed by the JVM takes considerably longer, so for
+ * optimum performance lookups should be coded like:
+ * &lt;code&gt;
+ * Context componentContext = (Context)new InitialContext().lookup(&quot;java:comp&quot;);
+ * String envEntry = (String) componentContext.lookup(&quot;env/myEntry&quot;);
+ * String envEntry2 = (String) componentContext.lookup(&quot;env/myEntry2&quot;);
+ * &lt;/code&gt;
+ */
+<span class="pc bpc" id="L60" title="1 of 2 branches missed.">@SuppressWarnings({&quot;unchecked&quot;, &quot;rawtypes&quot;})</span>
+public class ReadOnlyContext implements Context, Serializable {
+
+    public static final String SEPARATOR = &quot;/&quot;;
+<span class="fc" id="L64">    protected static final NameParser NAME_PARSER = new NameParserImpl();</span>
+    private static final long serialVersionUID = 8439856618571886566L;
+
+    protected final Hashtable&lt;String, Object&gt; environment; // environment for this context
+    protected final Map&lt;String, Object&gt; bindings; // bindings at my level
+    protected final Map&lt;String, Object&gt; treeBindings; // all bindings under me
+
+<span class="pc" id="L71">    private String nameInNamespace = &quot;&quot;;</span>
+
+<span class="fc" id="L73">    public ReadOnlyContext() {</span>
+<span class="fc" id="L74">        environment = new Hashtable&lt;String, Object&gt;();</span>
+<span class="fc" id="L75">        bindings = new HashMap&lt;String, Object&gt;();</span>
+<span class="fc" id="L76">        treeBindings = new HashMap&lt;String, Object&gt;();</span>
+<span class="fc" id="L77">    }</span>
+
+<span class="nc" id="L79">    public ReadOnlyContext(Hashtable env) {</span>
+<span class="nc bnc" id="L80" title="All 2 branches missed.">        if (env == null) {</span>
+<span class="nc" id="L81">            this.environment = new Hashtable&lt;String, Object&gt;();</span>
+        } else {
+<span class="nc" id="L83">            this.environment = new Hashtable&lt;String, Object&gt;(env);</span>
+        }
+<span class="nc" id="L85">        this.bindings = Collections.EMPTY_MAP;</span>
+<span class="nc" id="L86">        this.treeBindings = Collections.EMPTY_MAP;</span>
+<span class="nc" id="L87">    }</span>
+
+<span class="fc" id="L89">    public ReadOnlyContext(Hashtable environment, Map&lt;String, Object&gt; bindings) {</span>
+<span class="pc bpc" id="L90" title="1 of 2 branches missed.">        if (environment == null) {</span>
+<span class="nc" id="L91">            this.environment = new Hashtable&lt;String, Object&gt;();</span>
+        } else {
+<span class="fc" id="L93">            this.environment = new Hashtable&lt;String, Object&gt;(environment);</span>
+        }
+<span class="fc" id="L95">        this.bindings = new HashMap&lt;String, Object&gt;();</span>
+<span class="fc" id="L96">        treeBindings = new HashMap&lt;String, Object&gt;();</span>
+<span class="pc bpc" id="L97" title="1 of 2 branches missed.">        if (bindings != null) {</span>
+<span class="fc bfc" id="L98" title="All 2 branches covered.">            for (Map.Entry&lt;String, Object&gt; binding : bindings.entrySet()) {</span>
+                try {
+<span class="fc" id="L100">                    internalBind(binding.getKey(), binding.getValue());</span>
+<span class="nc" id="L101">                } catch (Throwable e) {</span>
+<span class="nc" id="L102">                    e.printStackTrace();</span>
+<span class="fc" id="L103">                }</span>
+<span class="fc" id="L104">            }</span>
+        }
+<span class="fc" id="L106">    }</span>
+
+    public ReadOnlyContext(Hashtable environment, Map&lt;String, Object&gt; bindings, String nameInNamespace) {
+<span class="nc" id="L109">        this(environment, bindings);</span>
+<span class="nc" id="L110">        this.nameInNamespace = nameInNamespace;</span>
+<span class="nc" id="L111">    }</span>
+
+<span class="nc" id="L113">    protected ReadOnlyContext(ReadOnlyContext clone, Hashtable env) {</span>
+<span class="nc" id="L114">        this.bindings = clone.bindings;</span>
+<span class="nc" id="L115">        this.treeBindings = clone.treeBindings;</span>
+<span class="nc" id="L116">        this.environment = new Hashtable&lt;String, Object&gt;(env);</span>
+<span class="nc" id="L117">    }</span>
+
+    protected ReadOnlyContext(ReadOnlyContext clone, Hashtable&lt;String, Object&gt; env, String nameInNamespace) {
+<span class="nc" id="L120">        this(clone, env);</span>
+<span class="nc" id="L121">        this.nameInNamespace = nameInNamespace;</span>
+<span class="nc" id="L122">    }</span>
+
+    /**
+     * internalBind is intended for use only during setup or possibly by
+     * suitably synchronized super-classes. It binds every possible lookup into a
+     * map in each context. To do this, each context strips off one name segment
+     * and if necessary creates a new context for it. Then it asks that context
+     * to bind the remaining name. It returns a map containing all the bindings
+     * from the next context, plus the context it just created (if it in fact
+     * created it). (the names are suitably extended by the segment originally
+     * lopped off).
+     *
+     * @param name
+     * @param value
+     * @return
+     * @throws javax.naming.NamingException
+     */
+    protected Map&lt;String, Object&gt; internalBind(String name, Object value) throws NamingException {
+<span class="pc bpc" id="L140" title="3 of 6 branches missed.">        assert name != null &amp;&amp; name.length() &gt; 0;</span>
+
+<span class="fc" id="L142">        Map&lt;String, Object&gt; newBindings = new HashMap&lt;String, Object&gt;();</span>
+<span class="fc" id="L143">        int pos = name.indexOf('/');</span>
+<span class="fc bfc" id="L144" title="All 2 branches covered.">        if (pos == -1) {</span>
+<span class="pc bpc" id="L145" title="1 of 2 branches missed.">            if (treeBindings.put(name, value) != null) {</span>
+<span class="nc" id="L146">                throw new NamingException(&quot;Something already bound at &quot; + name);</span>
+            }
+<span class="fc" id="L148">            bindings.put(name, value);</span>
+<span class="fc" id="L149">            newBindings.put(name, value);</span>
+        } else {
+<span class="fc" id="L151">            String segment = name.substring(0, pos);</span>
+<span class="pc bpc" id="L152" title="2 of 4 branches missed.">            assert segment != null;</span>
+<span class="pc bpc" id="L153" title="2 of 4 branches missed.">            assert !segment.equals(&quot;&quot;);</span>
+<span class="fc" id="L154">            Object o = treeBindings.get(segment);</span>
+<span class="pc bpc" id="L155" title="1 of 2 branches missed.">            if (o == null) {</span>
+<span class="fc" id="L156">                o = newContext();</span>
+<span class="fc" id="L157">                treeBindings.put(segment, o);</span>
+<span class="fc" id="L158">                bindings.put(segment, o);</span>
+<span class="fc" id="L159">                newBindings.put(segment, o);</span>
+<span class="nc bnc" id="L160" title="All 2 branches missed.">            } else if (!(o instanceof ReadOnlyContext)) {</span>
+<span class="nc" id="L161">                throw new NamingException(&quot;Something already bound where a subcontext should go&quot;);</span>
+            }
+<span class="fc" id="L163">            ReadOnlyContext readOnlyContext = (ReadOnlyContext) o;</span>
+<span class="fc" id="L164">            String remainder = name.substring(pos + 1);</span>
+<span class="fc" id="L165">            Map&lt;String, Object&gt; subBindings = readOnlyContext.internalBind(remainder, value);</span>
+<span class="fc bfc" id="L166" title="All 2 branches covered.">            for (Iterator&lt;Entry&lt;String, Object&gt;&gt; iterator = subBindings.entrySet().iterator(); iterator.hasNext();) {</span>
+<span class="fc" id="L167">                Entry&lt;String, Object&gt; entry = iterator.next();</span>
+<span class="fc" id="L168">                String subName = segment + &quot;/&quot; + entry.getKey();</span>
+<span class="fc" id="L169">                Object bound = entry.getValue();</span>
+<span class="fc" id="L170">                treeBindings.put(subName, bound);</span>
+<span class="fc" id="L171">                newBindings.put(subName, bound);</span>
+<span class="fc" id="L172">            }</span>
+        }
+<span class="fc" id="L174">        return newBindings;</span>
+    }
+
+    protected ReadOnlyContext newContext() {
+<span class="fc" id="L178">        return new ReadOnlyContext();</span>
+    }
+
+    @Override
+    public Object addToEnvironment(String propName, Object propVal) throws NamingException {
+<span class="nc" id="L183">        return environment.put(propName, propVal);</span>
+    }
+
+    @Override
+    public Hashtable&lt;String, Object&gt; getEnvironment() throws NamingException {
+<span class="nc" id="L188">        return (Hashtable&lt;String, Object&gt;) environment.clone();</span>
+    }
+
+    @Override
+    public Object removeFromEnvironment(String propName) throws NamingException {
+<span class="nc" id="L193">        return environment.remove(propName);</span>
+    }
+
+    @Override
+    public Object lookup(String name) throws NamingException {
+<span class="pc bpc" id="L198" title="1 of 2 branches missed.">        if (name.length() == 0) {</span>
+<span class="nc" id="L199">            return this;</span>
+        }
+<span class="fc" id="L201">        Object result = treeBindings.get(name);</span>
+<span class="fc bfc" id="L202" title="All 2 branches covered.">        if (result == null) {</span>
+<span class="fc" id="L203">            result = bindings.get(name);</span>
+        }
+<span class="fc bfc" id="L205" title="All 2 branches covered.">        if (result == null) {</span>
+<span class="fc" id="L206">            int pos = name.indexOf(':');</span>
+<span class="pc bpc" id="L207" title="1 of 2 branches missed.">            if (pos &gt; 0) {</span>
+<span class="nc" id="L208">                String scheme = name.substring(0, pos);</span>
+<span class="nc" id="L209">                Context ctx = NamingManager.getURLContext(scheme, environment);</span>
+<span class="nc bnc" id="L210" title="All 2 branches missed.">                if (ctx == null) {</span>
+<span class="nc" id="L211">                    throw new NamingException(&quot;scheme &quot; + scheme + &quot; not recognized&quot;);</span>
+                }
+<span class="nc" id="L213">                return ctx.lookup(name);</span>
+            } else {
+                // Split out the first name of the path
+                // and look for it in the bindings map.
+<span class="fc" id="L217">                CompositeName path = new CompositeName(name);</span>
+
+<span class="pc bpc" id="L219" title="1 of 2 branches missed.">                if (path.size() == 0) {</span>
+<span class="nc" id="L220">                    return this;</span>
+                } else {
+<span class="fc" id="L222">                    String first = path.get(0);</span>
+<span class="fc" id="L223">                    Object obj = bindings.get(first);</span>
+<span class="fc bfc" id="L224" title="All 2 branches covered.">                    if (obj == null) {</span>
+<span class="fc" id="L225">                        throw new NameNotFoundException(name);</span>
+<span class="pc bpc" id="L226" title="2 of 4 branches missed.">                    } else if (obj instanceof Context &amp;&amp; path.size() &gt; 1) {</span>
+<span class="fc" id="L227">                        Context subContext = (Context) obj;</span>
+<span class="fc" id="L228">                        obj = subContext.lookup(path.getSuffix(1));</span>
+                    }
+<span class="fc" id="L230">                    return obj;</span>
+                }
+            }
+        }
+<span class="pc bpc" id="L234" title="1 of 2 branches missed.">        if (result instanceof LinkRef) {</span>
+<span class="nc" id="L235">            LinkRef ref = (LinkRef) result;</span>
+<span class="nc" id="L236">            result = lookup(ref.getLinkName());</span>
+        }
+<span class="pc bpc" id="L238" title="1 of 2 branches missed.">        if (result instanceof Reference) {</span>
+            try {
+<span class="nc" id="L240">                result = NamingManager.getObjectInstance(result, null, null, this.environment);</span>
+<span class="nc" id="L241">            } catch (NamingException e) {</span>
+<span class="nc" id="L242">                throw e;</span>
+<span class="nc" id="L243">            } catch (Exception e) {</span>
+<span class="nc" id="L244">                throw (NamingException) new NamingException(&quot;could not look up : &quot; + name).initCause(e);</span>
+<span class="nc" id="L245">            }</span>
+        }
+<span class="pc bpc" id="L247" title="1 of 2 branches missed.">        if (result instanceof ReadOnlyContext) {</span>
+<span class="nc" id="L248">            String prefix = getNameInNamespace();</span>
+<span class="nc bnc" id="L249" title="All 2 branches missed.">            if (prefix.length() &gt; 0) {</span>
+<span class="nc" id="L250">                prefix = prefix + SEPARATOR;</span>
+            }
+<span class="nc" id="L252">            result = new ReadOnlyContext((ReadOnlyContext) result, environment, prefix + name);</span>
+        }
+<span class="fc" id="L254">        return result;</span>
+    }
+
+    @Override
+    public Object lookup(Name name) throws NamingException {
+<span class="fc" id="L259">        return lookup(name.toString());</span>
+    }
+
+    @Override
+    public Object lookupLink(String name) throws NamingException {
+<span class="nc" id="L264">        return lookup(name);</span>
+    }
+
+    @Override
+    public Name composeName(Name name, Name prefix) throws NamingException {
+<span class="nc" id="L269">        Name result = (Name) prefix.clone();</span>
+<span class="nc" id="L270">        result.addAll(name);</span>
+<span class="nc" id="L271">        return result;</span>
+    }
+
+    @Override
+    public String composeName(String name, String prefix) throws NamingException {
+<span class="nc" id="L276">        CompositeName result = new CompositeName(prefix);</span>
+<span class="nc" id="L277">        result.addAll(new CompositeName(name));</span>
+<span class="nc" id="L278">        return result.toString();</span>
+    }
+
+    @Override
+    public NamingEnumeration list(String name) throws NamingException {
+<span class="nc" id="L283">        Object o = lookup(name);</span>
+<span class="nc bnc" id="L284" title="All 2 branches missed.">        if (o == this) {</span>
+<span class="nc" id="L285">            return new ListEnumeration();</span>
+<span class="nc bnc" id="L286" title="All 2 branches missed.">        } else if (o instanceof Context) {</span>
+<span class="nc" id="L287">            return ((Context) o).list(&quot;&quot;);</span>
+        } else {
+<span class="nc" id="L289">            throw new NotContextException();</span>
+        }
+    }
+
+    @Override
+    public NamingEnumeration listBindings(String name) throws NamingException {
+<span class="nc" id="L295">        Object o = lookup(name);</span>
+<span class="nc bnc" id="L296" title="All 2 branches missed.">        if (o == this) {</span>
+<span class="nc" id="L297">            return new ListBindingEnumeration();</span>
+<span class="nc bnc" id="L298" title="All 2 branches missed.">        } else if (o instanceof Context) {</span>
+<span class="nc" id="L299">            return ((Context) o).listBindings(&quot;&quot;);</span>
+        } else {
+<span class="nc" id="L301">            throw new NotContextException();</span>
+        }
+    }
+
+    @Override
+    public Object lookupLink(Name name) throws NamingException {
+<span class="nc" id="L307">        return lookupLink(name.toString());</span>
+    }
+
+    @Override
+    public NamingEnumeration list(Name name) throws NamingException {
+<span class="nc" id="L312">        return list(name.toString());</span>
+    }
+
+    @Override
+    public NamingEnumeration listBindings(Name name) throws NamingException {
+<span class="nc" id="L317">        return listBindings(name.toString());</span>
+    }
+
+    @Override
+    public void bind(Name name, Object obj) throws NamingException {
+<span class="nc" id="L322">        throw new OperationNotSupportedException();</span>
+    }
+
+    @Override
+    public void bind(String name, Object obj) throws NamingException {
+<span class="nc" id="L327">        throw new OperationNotSupportedException();</span>
+    }
+
+    @Override
+    public void close() throws NamingException {
+        // ignore
+<span class="fc" id="L333">    }</span>
+
+    @Override
+    public Context createSubcontext(Name name) throws NamingException {
+<span class="nc" id="L337">        throw new OperationNotSupportedException();</span>
+    }
+
+    @Override
+    public Context createSubcontext(String name) throws NamingException {
+<span class="nc" id="L342">        throw new OperationNotSupportedException();</span>
+    }
+
+    @Override
+    public void destroySubcontext(Name name) throws NamingException {
+<span class="nc" id="L347">        throw new OperationNotSupportedException();</span>
+    }
+
+    @Override
+    public void destroySubcontext(String name) throws NamingException {
+<span class="nc" id="L352">        throw new OperationNotSupportedException();</span>
+    }
+
+    @Override
+    public String getNameInNamespace() throws NamingException {
+<span class="nc" id="L357">        return nameInNamespace;</span>
+    }
+
+    @Override
+    public NameParser getNameParser(Name name) throws NamingException {
+<span class="nc" id="L362">        return NAME_PARSER;</span>
+    }
+
+    @Override
+    public NameParser getNameParser(String name) throws NamingException {
+<span class="nc" id="L367">        return NAME_PARSER;</span>
+    }
+
+    @Override
+    public void rebind(Name name, Object obj) throws NamingException {
+<span class="nc" id="L372">        throw new OperationNotSupportedException();</span>
+    }
+
+    @Override
+    public void rebind(String name, Object obj) throws NamingException {
+<span class="fc" id="L377">        throw new OperationNotSupportedException();</span>
+    }
+
+    @Override
+    public void rename(Name oldName, Name newName) throws NamingException {
+<span class="nc" id="L382">        throw new OperationNotSupportedException();</span>
+    }
+
+    @Override
+    public void rename(String oldName, String newName) throws NamingException {
+<span class="fc" id="L387">        throw new OperationNotSupportedException();</span>
+    }
+
+    @Override
+    public void unbind(Name name) throws NamingException {
+<span class="nc" id="L392">        throw new OperationNotSupportedException();</span>
+    }
+
+    @Override
+    public void unbind(String name) throws NamingException {
+<span class="fc" id="L397">        throw new OperationNotSupportedException();</span>
+    }
+
+<span class="nc" id="L400">    private abstract class LocalNamingEnumeration implements NamingEnumeration {</span>
+<span class="nc" id="L401">        private final Iterator&lt;Entry&lt;String, Object&gt;&gt; i = bindings.entrySet().iterator();</span>
+
+        @Override
+        public boolean hasMore() throws NamingException {
+<span class="nc" id="L405">            return i.hasNext();</span>
+        }
+
+        @Override
+        public boolean hasMoreElements() {
+<span class="nc" id="L410">            return i.hasNext();</span>
+        }
+
+        protected Map.Entry&lt;String, Object&gt; getNext() {
+<span class="nc" id="L414">            return i.next();</span>
+        }
+
+        @Override
+        public void close() throws NamingException {
+<span class="nc" id="L419">        }</span>
+    }
+
+    private class ListEnumeration extends LocalNamingEnumeration {
+<span class="nc" id="L423">        ListEnumeration() {</span>
+<span class="nc" id="L424">        }</span>
+
+        @Override
+        public Object next() throws NamingException {
+<span class="nc" id="L428">            return nextElement();</span>
+        }
+
+        @Override
+        public Object nextElement() {
+<span class="nc" id="L433">            Map.Entry&lt;String, Object&gt; entry = getNext();</span>
+<span class="nc" id="L434">            return new NameClassPair(entry.getKey(), entry.getValue().getClass().getName());</span>
+        }
+    }
+
+    private class ListBindingEnumeration extends LocalNamingEnumeration {
+<span class="nc" id="L439">        ListBindingEnumeration() {</span>
+<span class="nc" id="L440">        }</span>
+
+        @Override
+        public Object next() throws NamingException {
+<span class="nc" id="L444">            return nextElement();</span>
+        }
+
+        @Override
+        public Object nextElement() {
+<span class="nc" id="L449">            Map.Entry&lt;String, Object&gt; entry = getNext();</span>
+<span class="nc" id="L450">            return new Binding(entry.getKey(), entry.getValue());</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

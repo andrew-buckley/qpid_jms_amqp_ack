@@ -1,0 +1,395 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpAbstractResource.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp</a> &gt; <span class="el_source">AmqpAbstractResource.java</span></div><h1>AmqpAbstractResource.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp;
+
+import static org.apache.qpid.jms.provider.amqp.AmqpSupport.NETWORK_HOST;
+import static org.apache.qpid.jms.provider.amqp.AmqpSupport.OPEN_HOSTNAME;
+import static org.apache.qpid.jms.provider.amqp.AmqpSupport.PORT;
+import static org.apache.qpid.jms.provider.amqp.AmqpSupport.CONTAINER_ID;
+import static org.apache.qpid.jms.provider.amqp.AmqpSupport.INVALID_FIELD;
+
+import java.io.IOException;
+import java.util.Map;
+
+import javax.jms.InvalidClientIDException;
+import javax.jms.InvalidDestinationException;
+import javax.jms.JMSException;
+import javax.jms.JMSSecurityException;
+
+import org.apache.qpid.jms.meta.JmsConnectionInfo;
+import org.apache.qpid.jms.meta.JmsResource;
+import org.apache.qpid.jms.provider.AsyncResult;
+import org.apache.qpid.jms.provider.ProviderRedirectedException;
+import org.apache.qpid.proton.amqp.Symbol;
+import org.apache.qpid.proton.amqp.transport.AmqpError;
+import org.apache.qpid.proton.amqp.transport.ConnectionError;
+import org.apache.qpid.proton.amqp.transport.ErrorCondition;
+import org.apache.qpid.proton.engine.Endpoint;
+import org.apache.qpid.proton.engine.EndpointState;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Abstract base for all AmqpResource implementations to extend.
+ *
+ * This abstract class wraps up the basic state management bits so that the concrete
+ * object don't have to reproduce it.  Provides hooks for the subclasses to initialize
+ * and shutdown.
+ */
+public abstract class AmqpAbstractResource&lt;R extends JmsResource, E extends Endpoint&gt; implements AmqpResource {
+
+<span class="fc" id="L55">    private static final Logger LOG = LoggerFactory.getLogger(AmqpAbstractResource.class);</span>
+
+    protected AsyncResult openRequest;
+    protected AsyncResult closeRequest;
+
+    private E endpoint;
+    protected R resource;
+
+    /**
+     * Creates a new instance with the JmsResource provided, and sets the Endpoint to null.
+     *
+     * @param resource
+     *        The JmsResource instance that this AmqpResource is managing.
+     */
+    public AmqpAbstractResource(R resource) {
+<span class="fc" id="L70">        this(resource, null);</span>
+<span class="fc" id="L71">    }</span>
+
+    /**
+     * Creates a new instance with the JmsResource provided, and sets the Endpoint to the given value.
+     *
+     * @param resource
+     *        The JmsResource instance that this AmqpResource is managing.
+     * @param endpoint
+     *        The Proton Endpoint instance that this object maps to.
+     */
+<span class="fc" id="L81">    public AmqpAbstractResource(R resource, E endpoint) {</span>
+<span class="fc" id="L82">        this.resource = resource;</span>
+<span class="fc" id="L83">        setEndpoint(endpoint);</span>
+<span class="fc" id="L84">    }</span>
+
+    @Override
+    public void open(AsyncResult request) {
+<span class="fc" id="L88">        this.openRequest = request;</span>
+<span class="fc" id="L89">        doOpen();</span>
+<span class="fc" id="L90">        getEndpoint().setContext(this);</span>
+<span class="fc" id="L91">    }</span>
+
+    @Override
+    public boolean isOpen() {
+<span class="nc bnc" id="L95" title="All 2 branches missed.">        return getEndpoint().getRemoteState() == EndpointState.ACTIVE;</span>
+    }
+
+    @Override
+    public boolean isAwaitingOpen() {
+<span class="fc bfc" id="L100" title="All 2 branches covered.">        return this.openRequest != null;</span>
+    }
+
+    @Override
+    public void opened() {
+<span class="pc bpc" id="L105" title="1 of 2 branches missed.">        if (this.openRequest != null) {</span>
+<span class="fc" id="L106">            this.openRequest.onSuccess();</span>
+<span class="fc" id="L107">            this.openRequest = null;</span>
+        }
+<span class="fc" id="L109">    }</span>
+
+    @Override
+    public void close(AsyncResult request) {
+        // If already closed signal success or else the caller might never get notified.
+<span class="pc bpc" id="L114" title="1 of 4 branches missed.">        if (getEndpoint().getLocalState() == EndpointState.CLOSED ||</span>
+            getEndpoint().getRemoteState() == EndpointState.CLOSED) {
+
+            // Remote already closed this resource, close locally and free.
+<span class="pc bpc" id="L118" title="1 of 2 branches missed.">            if (getEndpoint().getLocalState() != EndpointState.CLOSED) {</span>
+<span class="nc" id="L119">                doClose();</span>
+<span class="nc" id="L120">                getEndpoint().free();</span>
+            }
+
+<span class="fc" id="L123">            request.onSuccess();</span>
+<span class="fc" id="L124">            return;</span>
+        }
+
+<span class="fc" id="L127">        this.closeRequest = request;</span>
+<span class="fc" id="L128">        doClose();</span>
+<span class="fc" id="L129">    }</span>
+
+    @Override
+    public boolean isClosed() {
+<span class="nc bnc" id="L133" title="All 2 branches missed.">        return getEndpoint().getLocalState() == EndpointState.CLOSED;</span>
+    }
+
+    @Override
+    public boolean isAwaitingClose() {
+<span class="fc bfc" id="L138" title="All 2 branches covered.">        return this.closeRequest != null;</span>
+    }
+
+    @Override
+    public void closed() {
+<span class="fc" id="L143">        endpoint.close();</span>
+<span class="fc" id="L144">        endpoint.free();</span>
+
+<span class="fc bfc" id="L146" title="All 2 branches covered.">        if (this.closeRequest != null) {</span>
+<span class="fc" id="L147">            this.closeRequest.onSuccess();</span>
+<span class="fc" id="L148">            this.closeRequest = null;</span>
+        }
+<span class="fc" id="L150">    }</span>
+
+    @Override
+    public void failed() {
+<span class="nc" id="L154">        failed(new JMSException(&quot;Remote request failed.&quot;));</span>
+<span class="nc" id="L155">    }</span>
+
+    @Override
+    public void failed(Exception cause) {
+<span class="pc bpc" id="L159" title="1 of 2 branches missed.">        if (openRequest != null) {</span>
+<span class="pc bpc" id="L160" title="1 of 2 branches missed.">            if (endpoint != null) {</span>
+                // TODO: if this is a producer/consumer link then we may only be detached,
+                // rather than fully closed, and should respond appropriately.
+<span class="fc" id="L163">                endpoint.close();</span>
+            }
+<span class="fc" id="L165">            openRequest.onFailure(cause);</span>
+<span class="fc" id="L166">            openRequest = null;</span>
+        }
+
+<span class="pc bpc" id="L169" title="1 of 2 branches missed.">        if (closeRequest != null) {</span>
+<span class="nc" id="L170">            closeRequest.onFailure(cause);</span>
+<span class="nc" id="L171">            closeRequest = null;</span>
+        }
+<span class="fc" id="L173">    }</span>
+
+    @Override
+    public void remotelyClosed(AmqpProvider provider) {
+<span class="fc" id="L177">        Exception error = getRemoteError();</span>
+<span class="fc bfc" id="L178" title="All 2 branches covered.">        if (error == null) {</span>
+<span class="fc" id="L179">            error = new IOException(&quot;Remote has closed without error information&quot;);</span>
+        }
+
+<span class="pc bpc" id="L182" title="1 of 2 branches missed.">        if (endpoint != null) {</span>
+            // TODO: if this is a producer/consumer link then we may only be detached,
+            // rather than fully closed, and should respond appropriately.
+<span class="fc" id="L185">            endpoint.close();</span>
+        }
+
+<span class="fc" id="L188">        LOG.info(&quot;Resource {} was remotely closed&quot;, getJmsResource());</span>
+
+<span class="fc bfc" id="L190" title="All 2 branches covered.">        if (getJmsResource() instanceof JmsConnectionInfo) {</span>
+<span class="fc" id="L191">            provider.fireProviderException(error);</span>
+        } else {
+<span class="fc" id="L193">            provider.fireResourceRemotelyClosed(getJmsResource(), error);</span>
+        }
+<span class="fc" id="L195">    }</span>
+
+    public E getEndpoint() {
+<span class="fc" id="L198">        return this.endpoint;</span>
+    }
+
+    public void setEndpoint(E endpoint) {
+<span class="fc" id="L202">        this.endpoint = endpoint;</span>
+<span class="fc" id="L203">    }</span>
+
+    public R getJmsResource() {
+<span class="fc" id="L206">        return this.resource;</span>
+    }
+
+    public EndpointState getLocalState() {
+<span class="pc bpc" id="L210" title="1 of 2 branches missed.">        if (getEndpoint() == null) {</span>
+<span class="nc" id="L211">            return EndpointState.UNINITIALIZED;</span>
+        }
+<span class="fc" id="L213">        return getEndpoint().getLocalState();</span>
+    }
+
+    public EndpointState getRemoteState() {
+<span class="nc bnc" id="L217" title="All 2 branches missed.">        if (getEndpoint() == null) {</span>
+<span class="nc" id="L218">            return EndpointState.UNINITIALIZED;</span>
+        }
+<span class="nc" id="L220">        return getEndpoint().getRemoteState();</span>
+    }
+
+    @Override
+    public boolean hasRemoteError() {
+<span class="fc bfc" id="L225" title="All 2 branches covered.">        return getEndpoint().getRemoteCondition().getCondition() != null;</span>
+    }
+
+    @Override
+    public Exception getRemoteError() {
+<span class="fc" id="L230">        Exception remoteError = null;</span>
+<span class="fc" id="L231">        ErrorCondition remoteCondition = getEndpoint().getRemoteCondition();</span>
+<span class="fc" id="L232">        Symbol error = remoteCondition.getCondition();</span>
+<span class="fc bfc" id="L233" title="All 2 branches covered.">        if (error != null) {</span>
+<span class="fc" id="L234">            String message = getRemoteErrorMessage();</span>
+<span class="fc bfc" id="L235" title="All 2 branches covered.">            if (error.equals(AmqpError.UNAUTHORIZED_ACCESS)) {</span>
+<span class="fc" id="L236">                remoteError = new JMSSecurityException(message);</span>
+<span class="pc bpc" id="L237" title="1 of 2 branches missed.">            } else if (error.equals(AmqpError.NOT_FOUND)) {</span>
+<span class="nc" id="L238">                remoteError = new InvalidDestinationException(message);</span>
+<span class="fc bfc" id="L239" title="All 2 branches covered.">            } else if (error.equals(ConnectionError.REDIRECT)) {</span>
+<span class="fc" id="L240">                remoteError = createRedirectException(error, message, remoteCondition);</span>
+<span class="fc bfc" id="L241" title="All 2 branches covered.">            } else if (error.equals(AmqpError.INVALID_FIELD)) {</span>
+<span class="fc" id="L242">                Map&lt;?, ?&gt; info = remoteCondition.getInfo();</span>
+<span class="pc bpc" id="L243" title="1 of 4 branches missed.">                if (info != null &amp;&amp; CONTAINER_ID.equals(info.get(INVALID_FIELD))) {</span>
+<span class="fc" id="L244">                    remoteError = new InvalidClientIDException(message);</span>
+                } else {
+<span class="fc" id="L246">                    remoteError = new JMSException(message);</span>
+                }
+<span class="fc" id="L248">            } else {</span>
+<span class="fc" id="L249">                remoteError = new JMSException(message);</span>
+            }
+        }
+
+<span class="fc" id="L253">        return remoteError;</span>
+    }
+
+    @Override
+    public String getRemoteErrorMessage() {
+<span class="fc" id="L258">        String message = &quot;Received error from remote peer without description&quot;;</span>
+<span class="pc bpc" id="L259" title="1 of 2 branches missed.">        if (getEndpoint().getRemoteCondition() != null) {</span>
+<span class="fc" id="L260">            ErrorCondition error = getEndpoint().getRemoteCondition();</span>
+<span class="pc bpc" id="L261" title="2 of 4 branches missed.">            if (error.getDescription() != null &amp;&amp; !error.getDescription().isEmpty()) {</span>
+<span class="fc" id="L262">                message = error.getDescription();</span>
+            }
+
+<span class="fc" id="L265">            Symbol condition = getEndpoint().getRemoteCondition().getCondition();</span>
+<span class="pc bpc" id="L266" title="1 of 2 branches missed.">            if (condition != null) {</span>
+<span class="fc" id="L267">                message = message + &quot; [condition = &quot; + condition + &quot;]&quot;;</span>
+            }
+        }
+
+<span class="fc" id="L271">        return message;</span>
+    }
+
+    @Override
+    public void processRemoteOpen(AmqpProvider provider) throws IOException {
+<span class="fc" id="L276">        doOpenCompletion();</span>
+<span class="fc" id="L277">    }</span>
+
+    @Override
+    public void processRemoteDetach(AmqpProvider provider) throws IOException {
+<span class="pc bpc" id="L281" title="1 of 2 branches missed.">        if (isAwaitingClose()) {</span>
+<span class="fc" id="L282">            LOG.debug(&quot;{} is now closed: &quot;, this);</span>
+<span class="fc" id="L283">            closed();</span>
+        } else {
+<span class="nc" id="L285">            remotelyClosed(provider);</span>
+        }
+<span class="fc" id="L287">    }</span>
+
+    @Override
+    public void processRemoteClose(AmqpProvider provider) throws IOException {
+<span class="fc bfc" id="L291" title="All 2 branches covered.">        if (isAwaitingClose()) {</span>
+<span class="fc" id="L292">            LOG.debug(&quot;{} is now closed: &quot;, this);</span>
+<span class="fc" id="L293">            closed();</span>
+<span class="fc bfc" id="L294" title="All 2 branches covered.">        } else if (isAwaitingOpen()) {</span>
+            // Error on Open, create exception and signal failure.
+<span class="fc" id="L296">            LOG.warn(&quot;Open of {} failed: &quot;, this);</span>
+            Exception openError;
+<span class="fc bfc" id="L298" title="All 2 branches covered.">            if (hasRemoteError()) {</span>
+<span class="fc" id="L299">                openError = getRemoteError();</span>
+            } else {
+<span class="fc" id="L301">                openError = getOpenAbortException();</span>
+            }
+
+<span class="fc" id="L304">            failed(openError);</span>
+<span class="fc" id="L305">        } else {</span>
+<span class="fc" id="L306">            remotelyClosed(provider);</span>
+        }
+<span class="fc" id="L308">    }</span>
+
+    @Override
+    public void processDeliveryUpdates(AmqpProvider provider) throws IOException {
+<span class="fc" id="L312">    }</span>
+
+    @Override
+    public void processFlowUpdates(AmqpProvider provider) throws IOException {
+<span class="fc" id="L316">    }</span>
+
+    /**
+     * Perform the open operation on the managed endpoint.  A subclass may
+     * override this method to provide additional open actions or configuration
+     * updates.
+     */
+    protected void doOpen() {
+<span class="fc" id="L324">        getEndpoint().open();</span>
+<span class="fc" id="L325">    }</span>
+
+    /**
+     * Complete the open operation on the managed endpoint. A subclass may
+     * override this method to provide additional verification actions or configuration
+     * updates.
+     */
+    protected void doOpenCompletion() {
+<span class="fc" id="L333">        LOG.debug(&quot;{} is now open: &quot;, this);</span>
+<span class="fc" id="L334">        opened();</span>
+<span class="fc" id="L335">    }</span>
+
+    /**
+     * When a redirect type exception is received this method is called to create the
+     * appropriate redirect exception type containing the error details needed.
+     *
+     * @param error
+     *        the Symbol that defines the redirection error type.
+     * @param message
+     *        the basic error message that should used or amended for the returned exception.
+     * @param condition
+     *        the ErrorCondition that describes the redirection.
+     *
+     * @return an Exception that captures the details of the redirection error.
+     */
+    protected Exception createRedirectException(Symbol error, String message, ErrorCondition condition) {
+<span class="fc" id="L351">        Exception result = null;</span>
+<span class="fc" id="L352">        Map&lt;?, ?&gt; info = condition.getInfo();</span>
+
+<span class="pc bpc" id="L354" title="1 of 2 branches missed.">        if (info == null) {</span>
+<span class="nc" id="L355">            result = new IOException(message + &quot; : Redirection information not set.&quot;);</span>
+        } else {
+<span class="fc" id="L357">            String hostname = (String) info.get(OPEN_HOSTNAME);</span>
+
+<span class="fc" id="L359">            String networkHost = (String) info.get(NETWORK_HOST);</span>
+<span class="pc bpc" id="L360" title="2 of 4 branches missed.">            if (networkHost == null || networkHost.isEmpty()) {</span>
+<span class="nc" id="L361">                result = new IOException(message + &quot; : Redirection information not set.&quot;);</span>
+            }
+
+<span class="fc" id="L364">            int port = 0;</span>
+            try {
+<span class="fc" id="L366">                port = Integer.valueOf(info.get(PORT).toString());</span>
+<span class="nc" id="L367">            } catch (Exception ex) {</span>
+<span class="nc" id="L368">                result = new IOException(message + &quot; : Redirection information not set.&quot;);</span>
+<span class="fc" id="L369">            }</span>
+
+<span class="fc" id="L371">            result = new ProviderRedirectedException(message, hostname, networkHost, port);</span>
+        }
+
+<span class="fc" id="L374">        return result;</span>
+    }
+
+    /**
+     * When aborting the open operation, and there isnt an error condition,
+     * provided by the peer, the returned exception will be used instead.
+     * A subclass may override this method to provide alternative behaviour.
+     */
+    protected Exception getOpenAbortException() {
+<span class="nc" id="L383">        return new IOException(&quot;Open failed unexpectedly.&quot;);</span>
+    }
+
+    /**
+     * Perform the close operation on the managed endpoint.  A subclass may
+     * override this method to provide additional close actions or alter the
+     * standard close path such as endpoint detach etc.
+     */
+    protected void doClose() {
+<span class="fc" id="L392">        getEndpoint().close();</span>
+<span class="fc" id="L393">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

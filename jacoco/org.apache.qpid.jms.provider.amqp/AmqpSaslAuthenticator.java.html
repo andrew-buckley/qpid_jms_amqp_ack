@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpSaslAuthenticator.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp</a> &gt; <span class="el_source">AmqpSaslAuthenticator.java</span></div><h1>AmqpSaslAuthenticator.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp;
+
+import java.security.Principal;
+import java.util.HashSet;
+import java.util.Set;
+
+import javax.jms.JMSSecurityException;
+import javax.security.sasl.SaslException;
+
+import org.apache.qpid.jms.meta.JmsConnectionInfo;
+import org.apache.qpid.jms.sasl.Mechanism;
+import org.apache.qpid.jms.sasl.SaslMechanismFinder;
+import org.apache.qpid.proton.engine.Sasl;
+
+/**
+ * Manage the SASL authentication process
+ */
+public class AmqpSaslAuthenticator {
+
+    private final Sasl sasl;
+    private final JmsConnectionInfo info;
+    private Mechanism mechanism;
+    private Principal localPrincipal;
+    private Set&lt;String&gt; mechanismsRestriction;
+
+    /**
+     * Create the authenticator and initialize it.
+     *
+     * @param sasl
+     *        The Proton SASL entry point this class will use to manage the authentication.
+     * @param info
+     *        The Connection information used to provide credentials to the remote peer.
+     * @param localPrincipal
+     *        The local Principal associated with the transport, or null if there is none.
+     * @param mechanismsRestriction
+     *        The possible mechanism(s) to which the client should restrict its
+     *        mechanism selection to if offered by the server
+     */
+<span class="fc" id="L55">    public AmqpSaslAuthenticator(Sasl sasl, JmsConnectionInfo info, Principal localPrincipal, String[] mechanismsRestriction) {</span>
+<span class="fc" id="L56">        this.sasl = sasl;</span>
+<span class="fc" id="L57">        this.info = info;</span>
+<span class="fc" id="L58">        this.localPrincipal = localPrincipal;</span>
+<span class="fc bfc" id="L59" title="All 2 branches covered.">        if(mechanismsRestriction != null) {</span>
+<span class="fc" id="L60">            Set&lt;String&gt; mechs = new HashSet&lt;String&gt;();</span>
+<span class="fc bfc" id="L61" title="All 2 branches covered.">            for(int i = 0; i &lt; mechanismsRestriction.length; i++) {</span>
+<span class="fc" id="L62">                String mech = mechanismsRestriction[i];</span>
+<span class="pc bpc" id="L63" title="1 of 2 branches missed.">                if(!mech.trim().isEmpty()) {</span>
+<span class="fc" id="L64">                    mechs.add(mech);</span>
+                }
+            }
+
+<span class="pc bpc" id="L68" title="1 of 2 branches missed.">            if(!mechs.isEmpty()) {</span>
+<span class="fc" id="L69">                this.mechanismsRestriction = mechs;</span>
+            }
+        }
+<span class="fc" id="L72">    }</span>
+
+    /**
+     * Process the SASL authentication cycle until such time as an outcome is determine. This
+     * method must be called by the managing entity until the return value is true indicating a
+     * successful authentication or a JMSSecurityException is thrown indicating that the
+     * handshake failed.
+     *
+     * @throws JMSSecurityException
+     */
+    public boolean authenticate() throws JMSSecurityException {
+<span class="pc bpc" id="L83" title="3 of 5 branches missed.">        switch (sasl.getState()) {</span>
+            case PN_SASL_IDLE:
+<span class="fc" id="L85">                handleSaslInit();</span>
+<span class="fc" id="L86">                break;</span>
+            case PN_SASL_STEP:
+<span class="nc" id="L88">                handleSaslStep();</span>
+<span class="nc" id="L89">                break;</span>
+            case PN_SASL_FAIL:
+<span class="nc" id="L91">                handleSaslFail();</span>
+<span class="nc" id="L92">                break;</span>
+            case PN_SASL_PASS:
+<span class="fc" id="L94">                return true;</span>
+            default:
+        }
+
+<span class="fc" id="L98">        return false;</span>
+    }
+
+    private void handleSaslInit() throws JMSSecurityException {
+        try {
+<span class="fc" id="L103">            String[] remoteMechanisms = sasl.getRemoteMechanisms();</span>
+<span class="pc bpc" id="L104" title="1 of 4 branches missed.">            if (remoteMechanisms != null &amp;&amp; remoteMechanisms.length != 0) {</span>
+<span class="fc" id="L105">                mechanism = SaslMechanismFinder.findMatchingMechanism(info.getUsername(), info.getPassword(), localPrincipal, mechanismsRestriction, remoteMechanisms);</span>
+<span class="pc bpc" id="L106" title="1 of 2 branches missed.">                if (mechanism != null) {</span>
+<span class="fc" id="L107">                    mechanism.setUsername(info.getUsername());</span>
+<span class="fc" id="L108">                    mechanism.setPassword(info.getPassword());</span>
+                    // TODO - set additional options from URI.
+
+<span class="fc" id="L111">                    sasl.setMechanisms(mechanism.getName());</span>
+<span class="fc" id="L112">                    byte[] response = mechanism.getInitialResponse();</span>
+<span class="fc bfc" id="L113" title="All 2 branches covered.">                    if (response != null) {</span>
+<span class="fc" id="L114">                        sasl.send(response, 0, response.length);</span>
+                    }
+<span class="fc" id="L116">                } else {</span>
+                    // TODO - Better error message.
+<span class="nc" id="L118">                    throw new JMSSecurityException(&quot;Could not find a suitable SASL mechanism for the remote peer using the available credentials.&quot;);</span>
+                }
+            }
+<span class="nc" id="L121">        } catch (SaslException se) {</span>
+            // TODO - Better error message.
+<span class="nc" id="L123">            JMSSecurityException jmsse = new JMSSecurityException(&quot;Exception while processing SASL init.&quot;);</span>
+<span class="nc" id="L124">            jmsse.setLinkedException(se);</span>
+<span class="nc" id="L125">            jmsse.initCause(se);</span>
+<span class="nc" id="L126">            throw jmsse;</span>
+<span class="fc" id="L127">        }</span>
+<span class="fc" id="L128">    }</span>
+
+    private void handleSaslStep() throws JMSSecurityException {
+        try {
+<span class="nc bnc" id="L132" title="All 2 branches missed.">            if (sasl.pending() != 0) {</span>
+<span class="nc" id="L133">                byte[] challenge = new byte[sasl.pending()];</span>
+<span class="nc" id="L134">                sasl.recv(challenge, 0, challenge.length);</span>
+<span class="nc" id="L135">                byte[] response = mechanism.getChallengeResponse(challenge);</span>
+<span class="nc" id="L136">                sasl.send(response, 0, response.length);</span>
+            }
+<span class="nc" id="L138">        } catch (SaslException se) {</span>
+            // TODO - Better error message.
+<span class="nc" id="L140">            JMSSecurityException jmsse = new JMSSecurityException(&quot;Exception while processing SASL step.&quot;);</span>
+<span class="nc" id="L141">            jmsse.setLinkedException(se);</span>
+<span class="nc" id="L142">            jmsse.initCause(se);</span>
+<span class="nc" id="L143">            throw jmsse;</span>
+<span class="nc" id="L144">        }</span>
+<span class="nc" id="L145">    }</span>
+
+    private void handleSaslFail() throws JMSSecurityException {
+        // TODO - Better error message.
+<span class="fc" id="L149">        throw new JMSSecurityException(&quot;Client failed to authenticate&quot;);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

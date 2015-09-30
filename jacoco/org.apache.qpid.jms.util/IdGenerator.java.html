@@ -1,0 +1,229 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>IdGenerator.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.util</a> &gt; <span class="el_source">IdGenerator.java</span></div><h1>IdGenerator.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.util;
+
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.util.concurrent.atomic.AtomicLong;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Generator for Globally unique Strings.
+ */
+public class IdGenerator {
+
+<span class="fc" id="L31">    private static final Logger LOG = LoggerFactory.getLogger(IdGenerator.class);</span>
+    private static final String UNIQUE_STUB;
+    private static int instanceCount;
+    private static String hostName;
+    private String seed;
+<span class="fc" id="L36">    private final AtomicLong sequence = new AtomicLong(1);</span>
+    private int length;
+    public static final String PROPERTY_IDGENERATOR_PORT = &quot;activemq.idgenerator.port&quot;;
+
+    static {
+<span class="fc" id="L41">        String stub = &quot;&quot;;</span>
+<span class="fc" id="L42">        boolean canAccessSystemProps = true;</span>
+        try {
+<span class="fc" id="L44">            SecurityManager sm = System.getSecurityManager();</span>
+<span class="pc bpc" id="L45" title="1 of 2 branches missed.">            if (sm != null) {</span>
+<span class="nc" id="L46">                sm.checkPropertiesAccess();</span>
+            }
+<span class="nc" id="L48">        } catch (SecurityException se) {</span>
+<span class="nc" id="L49">            canAccessSystemProps = false;</span>
+<span class="fc" id="L50">        }</span>
+
+<span class="pc bpc" id="L52" title="1 of 2 branches missed.">        if (canAccessSystemProps) {</span>
+<span class="fc" id="L53">            int idGeneratorPort = 0;</span>
+<span class="fc" id="L54">            ServerSocket ss = null;</span>
+            try {
+<span class="fc" id="L56">                idGeneratorPort = Integer.parseInt(System.getProperty(PROPERTY_IDGENERATOR_PORT, &quot;0&quot;));</span>
+<span class="fc" id="L57">                LOG.trace(&quot;Using port {}&quot;, idGeneratorPort);</span>
+<span class="fc" id="L58">                hostName = InetAddressUtil.getLocalHostName();</span>
+<span class="fc" id="L59">                ss = new ServerSocket(idGeneratorPort);</span>
+<span class="fc" id="L60">                stub = &quot;-&quot; + ss.getLocalPort() + &quot;-&quot; + System.currentTimeMillis() + &quot;-&quot;;</span>
+<span class="fc" id="L61">                Thread.sleep(100);</span>
+<span class="nc" id="L62">            } catch (Exception e) {</span>
+<span class="nc bnc" id="L63" title="All 2 branches missed.">                if (LOG.isTraceEnabled()) {</span>
+<span class="nc" id="L64">                    LOG.trace(&quot;could not generate unique stub by using DNS and binding to local port&quot;, e);</span>
+                } else {
+<span class="nc" id="L66">                    LOG.warn(&quot;could not generate unique stub by using DNS and binding to local port: {} {}&quot;, e.getClass().getCanonicalName(), e.getMessage());</span>
+                }
+
+                // Restore interrupted state so higher level code can deal with it.
+<span class="nc bnc" id="L70" title="All 2 branches missed.">                if (e instanceof InterruptedException) {</span>
+<span class="nc" id="L71">                    Thread.currentThread().interrupt();</span>
+                }
+            } finally {
+<span class="pc bpc" id="L74" title="5 of 6 branches missed.">                if (ss != null) {</span>
+                    try {
+<span class="pc" id="L76">                        ss.close();</span>
+<span class="nc" id="L77">                    } catch (IOException ioe) {</span>
+<span class="nc bnc" id="L78" title="All 6 branches missed.">                        if (LOG.isTraceEnabled()) {</span>
+<span class="nc" id="L79">                            LOG.trace(&quot;Closing the server socket failed&quot;, ioe);</span>
+                        } else {
+<span class="nc" id="L81">                            LOG.warn(&quot;Closing the server socket failed&quot; + &quot; due &quot; + ioe.getMessage());</span>
+                        }
+<span class="pc" id="L83">                    }</span>
+                }
+            }
+        }
+
+<span class="pc bpc" id="L88" title="1 of 2 branches missed.">        if (hostName == null) {</span>
+<span class="nc" id="L89">            hostName = &quot;localhost&quot;;</span>
+        }
+<span class="fc" id="L91">        hostName = sanitizeHostName(hostName);</span>
+
+<span class="pc bpc" id="L93" title="1 of 2 branches missed.">        if (stub.length() == 0) {</span>
+<span class="nc" id="L94">            stub = &quot;-1-&quot; + System.currentTimeMillis() + &quot;-&quot;;</span>
+        }
+<span class="fc" id="L96">        UNIQUE_STUB = stub;</span>
+<span class="fc" id="L97">    }</span>
+
+    /**
+     * Construct an IdGenerator
+     */
+<span class="fc" id="L102">    public IdGenerator(String prefix) {</span>
+<span class="fc" id="L103">        synchronized (UNIQUE_STUB) {</span>
+<span class="fc" id="L104">            this.seed = prefix + UNIQUE_STUB + (instanceCount++) + &quot;:&quot;;</span>
+<span class="fc" id="L105">            this.length = this.seed.length() + (&quot;&quot; + Long.MAX_VALUE).length();</span>
+<span class="pc" id="L106">        }</span>
+<span class="fc" id="L107">    }</span>
+
+    public IdGenerator() {
+<span class="fc" id="L110">        this(&quot;ID:&quot; + hostName);</span>
+<span class="fc" id="L111">    }</span>
+
+    /**
+     * As we have to find the host name as a side-affect of generating a unique stub, we allow
+     * it's easy retrieval here
+     *
+     * @return the local host name
+     */
+    public static String getHostName() {
+<span class="fc" id="L120">        return hostName;</span>
+    }
+
+    /**
+     * Generate a unique id
+     *
+     * @return a unique id
+     */
+    public synchronized String generateId() {
+<span class="fc" id="L129">        StringBuilder sb = new StringBuilder(length);</span>
+<span class="fc" id="L130">        sb.append(seed);</span>
+<span class="fc" id="L131">        sb.append(sequence.getAndIncrement());</span>
+<span class="fc" id="L132">        return sb.toString();</span>
+    }
+
+    public static String sanitizeHostName(String hostName) {
+<span class="fc" id="L136">        boolean changed = false;</span>
+
+<span class="fc" id="L138">        StringBuilder sb = new StringBuilder();</span>
+<span class="fc bfc" id="L139" title="All 2 branches covered.">        for (char ch : hostName.toCharArray()) {</span>
+            // only include ASCII chars
+<span class="fc bfc" id="L141" title="All 2 branches covered.">            if (ch &lt; 127) {</span>
+<span class="fc" id="L142">                sb.append(ch);</span>
+            } else {
+<span class="fc" id="L144">                changed = true;</span>
+            }
+        }
+
+<span class="fc bfc" id="L148" title="All 2 branches covered.">        if (changed) {</span>
+<span class="fc" id="L149">            String newHost = sb.toString();</span>
+<span class="fc" id="L150">            LOG.info(&quot;Sanitized hostname from: {} to: {}&quot;, hostName, newHost);</span>
+<span class="fc" id="L151">            return newHost;</span>
+        } else {
+<span class="fc" id="L153">            return hostName;</span>
+        }
+    }
+
+    /**
+     * Generate a unique ID - that is friendly for a URL or file system
+     *
+     * @return a unique id
+     */
+    public String generateSanitizedId() {
+<span class="fc" id="L163">        String result = generateId();</span>
+<span class="fc" id="L164">        result = result.replace(':', '-');</span>
+<span class="fc" id="L165">        result = result.replace('_', '-');</span>
+<span class="fc" id="L166">        result = result.replace('.', '-');</span>
+<span class="fc" id="L167">        return result;</span>
+    }
+
+    /**
+     * From a generated id - return the seed (i.e. minus the count)
+     *
+     * @param id
+     *        the generated identifier
+     * @return the seed
+     */
+    public static String getSeedFromId(String id) {
+<span class="fc" id="L178">        String result = id;</span>
+<span class="fc bfc" id="L179" title="All 2 branches covered.">        if (id != null) {</span>
+<span class="fc" id="L180">            int index = id.lastIndexOf(':');</span>
+<span class="fc bfc" id="L181" title="All 4 branches covered.">            if (index &gt; 0 &amp;&amp; (index + 1) &lt; id.length()) {</span>
+<span class="fc" id="L182">                result = id.substring(0, index);</span>
+            }
+        }
+<span class="fc" id="L185">        return result;</span>
+    }
+
+    /**
+     * From a generated id - return the generator count
+     *
+     * @param id
+     * @return the count
+     */
+    public static long getSequenceFromId(String id) {
+<span class="fc" id="L195">        long result = -1;</span>
+<span class="fc bfc" id="L196" title="All 2 branches covered.">        if (id != null) {</span>
+<span class="fc" id="L197">            int index = id.lastIndexOf(':');</span>
+
+<span class="fc bfc" id="L199" title="All 4 branches covered.">            if (index &gt; 0 &amp;&amp; (index + 1) &lt; id.length()) {</span>
+<span class="fc" id="L200">                String numStr = id.substring(index + 1, id.length());</span>
+<span class="fc" id="L201">                result = Long.parseLong(numStr);</span>
+            }
+        }
+<span class="fc" id="L204">        return result;</span>
+    }
+
+    /**
+     * Does a proper compare on the Id's
+     *
+     * @param id1
+     * @param id2
+     * @return 0 if equal else a positive if {@literal id1 &gt; id2} ...
+     */
+    public static int compare(String id1, String id2) {
+<span class="fc" id="L215">        int result = -1;</span>
+<span class="fc" id="L216">        String seed1 = IdGenerator.getSeedFromId(id1);</span>
+<span class="fc" id="L217">        String seed2 = IdGenerator.getSeedFromId(id2);</span>
+<span class="fc bfc" id="L218" title="All 4 branches covered.">        if (seed1 != null &amp;&amp; seed2 != null) {</span>
+<span class="fc" id="L219">            result = seed1.compareTo(seed2);</span>
+<span class="fc bfc" id="L220" title="All 2 branches covered.">            if (result == 0) {</span>
+<span class="fc" id="L221">                long count1 = IdGenerator.getSequenceFromId(id1);</span>
+<span class="fc" id="L222">                long count2 = IdGenerator.getSequenceFromId(id2);</span>
+<span class="fc" id="L223">                result = (int) (count1 - count2);</span>
+            }
+        }
+<span class="fc" id="L226">        return result;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

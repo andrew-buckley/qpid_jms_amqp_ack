@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>StopWatch.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.util</a> &gt; <span class="el_source">StopWatch.java</span></div><h1>StopWatch.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.util;
+
+/**
+ * A very simple stop watch.
+ * &lt;p&gt;
+ * This implementation is not thread safe and can only time one task at any given time.
+ */
+public final class StopWatch {
+
+    private long start;
+    private long stop;
+
+    /**
+     * Starts the stop watch
+     */
+    public StopWatch() {
+<span class="fc" id="L33">        this(true);</span>
+<span class="fc" id="L34">    }</span>
+
+    /**
+     * Creates the stop watch
+     *
+     * @param started whether it should start immediately
+     */
+<span class="fc" id="L41">    public StopWatch(boolean started) {</span>
+<span class="fc bfc" id="L42" title="All 2 branches covered.">        if (started) {</span>
+<span class="fc" id="L43">            restart();</span>
+        }
+<span class="fc" id="L45">    }</span>
+
+    /**
+     * Starts or restarts the stop watch
+     */
+    public void restart() {
+<span class="fc" id="L51">        start = System.currentTimeMillis();</span>
+<span class="fc" id="L52">        stop = 0;</span>
+<span class="fc" id="L53">    }</span>
+
+    /**
+     * Stops the stop watch
+     *
+     * @return the time taken in millis.
+     */
+    public long stop() {
+<span class="fc" id="L61">        stop = System.currentTimeMillis();</span>
+<span class="fc" id="L62">        return taken();</span>
+    }
+
+    /**
+     * Returns the time taken in millis.
+     *
+     * @return time in millis
+     */
+    public long taken() {
+<span class="fc bfc" id="L71" title="All 4 branches covered.">        if (start &gt; 0 &amp;&amp; stop &gt; 0) {</span>
+<span class="fc" id="L72">            return stop - start;</span>
+<span class="fc bfc" id="L73" title="All 2 branches covered.">        } else if (start &gt; 0) {</span>
+<span class="fc" id="L74">            return System.currentTimeMillis() - start;</span>
+        } else {
+<span class="fc" id="L76">            return 0;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

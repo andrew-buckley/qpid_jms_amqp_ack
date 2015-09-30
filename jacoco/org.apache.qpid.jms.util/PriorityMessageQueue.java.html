@@ -1,0 +1,151 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>PriorityMessageQueue.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.util</a> &gt; <span class="el_source">PriorityMessageQueue.java</span></div><h1>PriorityMessageQueue.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.util;
+
+import java.util.ArrayList;
+import java.util.LinkedList;
+import java.util.List;
+
+import javax.jms.JMSException;
+
+import org.apache.qpid.jms.message.JmsInboundMessageDispatch;
+
+/**
+ * Simple Message Priority ordered Queue.  Message envelopes are stored in the
+ * Queue based on their priority value, except where {@link #enqueueFirst} is
+ * used.
+ */
+public final class PriorityMessageQueue extends AbstractMessageQueue {
+
+    // There are 10 priorities, values 0-9
+<span class="fc" id="L35">    private static final Integer MAX_PRIORITY = 9;</span>
+
+    private final LinkedList&lt;JmsInboundMessageDispatch&gt;[] lists;
+<span class="fc" id="L38">    private int size = 0;</span>
+
+    @SuppressWarnings(&quot;unchecked&quot;)
+<span class="fc" id="L41">    public PriorityMessageQueue() {</span>
+<span class="fc" id="L42">        this.lists = new LinkedList[MAX_PRIORITY + 1];</span>
+<span class="fc bfc" id="L43" title="All 2 branches covered.">        for (int i = 0; i &lt;= MAX_PRIORITY; i++) {</span>
+<span class="fc" id="L44">            lists[i] = new LinkedList&lt;JmsInboundMessageDispatch&gt;();</span>
+        }
+<span class="fc" id="L46">    }</span>
+
+    @Override
+    public void enqueue(JmsInboundMessageDispatch envelope) {
+<span class="fc" id="L50">        synchronized (lock) {</span>
+<span class="fc" id="L51">            getList(envelope).addLast(envelope);</span>
+<span class="fc" id="L52">            this.size++;</span>
+<span class="fc" id="L53">            lock.notify();</span>
+<span class="pc" id="L54">        }</span>
+<span class="fc" id="L55">    }</span>
+
+    @Override
+    public void enqueueFirst(JmsInboundMessageDispatch envelope) {
+<span class="fc" id="L59">        synchronized (lock) {</span>
+<span class="fc" id="L60">            getList(MAX_PRIORITY).addFirst(envelope);</span>
+<span class="fc" id="L61">            this.size++;</span>
+<span class="fc" id="L62">            lock.notify();</span>
+<span class="pc" id="L63">        }</span>
+<span class="fc" id="L64">    }</span>
+
+    @Override
+    public boolean isEmpty() {
+<span class="fc" id="L68">        synchronized (lock) {</span>
+<span class="fc bfc" id="L69" title="All 2 branches covered.">            return size == 0;</span>
+<span class="nc" id="L70">        }</span>
+    }
+
+    @Override
+    public int size() {
+<span class="fc" id="L75">        synchronized (lock) {</span>
+<span class="fc" id="L76">            return size;</span>
+<span class="nc" id="L77">        }</span>
+    }
+
+    @Override
+    public void clear() {
+<span class="fc" id="L82">        synchronized (lock) {</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">            for (int i = 0; i &lt;= MAX_PRIORITY; i++) {</span>
+<span class="fc" id="L84">                lists[i].clear();</span>
+            }
+<span class="fc" id="L86">            this.size = 0;</span>
+<span class="pc" id="L87">        }</span>
+<span class="fc" id="L88">    }</span>
+
+    @Override
+    public List&lt;JmsInboundMessageDispatch&gt; removeAll() {
+<span class="fc" id="L92">        synchronized (lock) {</span>
+<span class="fc" id="L93">            ArrayList&lt;JmsInboundMessageDispatch&gt; result = new ArrayList&lt;JmsInboundMessageDispatch&gt;(size());</span>
+<span class="fc bfc" id="L94" title="All 2 branches covered.">            for (int i = MAX_PRIORITY; i &gt;= 0; i--) {</span>
+<span class="fc" id="L95">                List&lt;JmsInboundMessageDispatch&gt; list = lists[i];</span>
+<span class="fc" id="L96">                result.addAll(list);</span>
+<span class="fc" id="L97">                size -= list.size();</span>
+<span class="fc" id="L98">                list.clear();</span>
+            }
+<span class="fc" id="L100">            return result;</span>
+<span class="nc" id="L101">        }</span>
+    }
+
+    @Override
+    protected JmsInboundMessageDispatch removeFirst() {
+<span class="pc bpc" id="L106" title="1 of 2 branches missed.">        if (this.size &gt; 0) {</span>
+<span class="pc bpc" id="L107" title="1 of 2 branches missed.">            for (int i = MAX_PRIORITY; i &gt;= 0; i--) {</span>
+<span class="fc" id="L108">                LinkedList&lt;JmsInboundMessageDispatch&gt; list = lists[i];</span>
+<span class="fc bfc" id="L109" title="All 2 branches covered.">                if (!list.isEmpty()) {</span>
+<span class="fc" id="L110">                    this.size--;</span>
+<span class="fc" id="L111">                    return list.removeFirst();</span>
+                }
+            }
+        }
+<span class="nc" id="L115">        return null;</span>
+    }
+
+    @Override
+    protected JmsInboundMessageDispatch peekFirst() {
+<span class="fc bfc" id="L120" title="All 2 branches covered.">        if (this.size &gt; 0) {</span>
+<span class="pc bpc" id="L121" title="1 of 2 branches missed.">            for (int i = MAX_PRIORITY; i &gt;= 0; i--) {</span>
+<span class="fc" id="L122">                LinkedList&lt;JmsInboundMessageDispatch&gt; list = lists[i];</span>
+<span class="fc bfc" id="L123" title="All 2 branches covered.">                if (!list.isEmpty()) {</span>
+<span class="fc" id="L124">                    return list.peekFirst();</span>
+                }
+            }
+        }
+<span class="fc" id="L128">        return null;</span>
+    }
+
+    private int getPriority(JmsInboundMessageDispatch envelope) {
+<span class="fc" id="L132">        int priority = javax.jms.Message.DEFAULT_PRIORITY;</span>
+<span class="pc bpc" id="L133" title="1 of 2 branches missed.">        if (envelope.getMessage() != null) {</span>
+            try {
+<span class="fc" id="L135">                priority = Math.max(envelope.getMessage().getJMSPriority(), 0);</span>
+<span class="nc" id="L136">            } catch (JMSException e) {</span>
+<span class="fc" id="L137">            }</span>
+<span class="fc" id="L138">            priority = Math.min(priority, MAX_PRIORITY);</span>
+        }
+<span class="fc" id="L140">        return priority;</span>
+    }
+
+    private LinkedList&lt;JmsInboundMessageDispatch&gt; getList(JmsInboundMessageDispatch envelope) {
+<span class="fc" id="L144">        return getList(getPriority(envelope));</span>
+    }
+
+    private LinkedList&lt;JmsInboundMessageDispatch&gt; getList(int priority) {
+<span class="fc" id="L148">        return lists[priority];</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

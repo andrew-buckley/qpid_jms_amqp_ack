@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpSession.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp</a> &gt; <span class="el_source">AmqpSession.java</span></div><h1>AmqpSession.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp;
+
+import java.util.HashMap;
+import java.util.Map;
+
+import javax.jms.IllegalStateException;
+
+import org.apache.qpid.jms.meta.JmsConsumerId;
+import org.apache.qpid.jms.meta.JmsConsumerInfo;
+import org.apache.qpid.jms.meta.JmsProducerId;
+import org.apache.qpid.jms.meta.JmsProducerInfo;
+import org.apache.qpid.jms.meta.JmsSessionId;
+import org.apache.qpid.jms.meta.JmsSessionInfo;
+import org.apache.qpid.jms.meta.JmsTransactionId;
+import org.apache.qpid.jms.provider.AsyncResult;
+import org.apache.qpid.jms.provider.ProviderConstants;
+import org.apache.qpid.proton.engine.Session;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class AmqpSession extends AmqpAbstractResource&lt;JmsSessionInfo, Session&gt; {
+
+<span class="fc" id="L39">    private static final Logger LOG = LoggerFactory.getLogger(AmqpSession.class);</span>
+
+    private final AmqpConnection connection;
+    private final AmqpTransactionContext txContext;
+
+<span class="fc" id="L44">    private final Map&lt;JmsConsumerId, AmqpConsumer&gt; consumers = new HashMap&lt;JmsConsumerId, AmqpConsumer&gt;();</span>
+
+    public AmqpSession(AmqpConnection connection, JmsSessionInfo info) {
+<span class="fc" id="L47">        super(info, connection.getProtonConnection().session());</span>
+<span class="fc" id="L48">        this.connection = connection;</span>
+
+<span class="fc" id="L50">        this.resource.getSessionId().setProviderHint(this);</span>
+<span class="fc bfc" id="L51" title="All 2 branches covered.">        if (this.resource.isTransacted()) {</span>
+<span class="fc" id="L52">            txContext = new AmqpTransactionContext(this);</span>
+        } else {
+<span class="fc" id="L54">            txContext = null;</span>
+        }
+<span class="fc" id="L56">    }</span>
+
+    @Override
+    public void opened() {
+<span class="fc bfc" id="L60" title="All 2 branches covered.">        if (this.txContext != null) {</span>
+<span class="fc" id="L61">            this.txContext.open(openRequest);</span>
+        } else {
+<span class="fc" id="L63">            super.opened();</span>
+        }
+<span class="fc" id="L65">    }</span>
+
+    @Override
+    protected void doOpen() {
+<span class="fc" id="L69">        long outgoingWindow = getProvider().getSessionOutgoingWindow();</span>
+
+<span class="fc" id="L71">        Session session = this.getEndpoint();</span>
+<span class="fc" id="L72">        session.setIncomingCapacity(Integer.MAX_VALUE);</span>
+<span class="fc bfc" id="L73" title="All 2 branches covered.">        if(outgoingWindow &gt;= 0) {</span>
+<span class="fc" id="L74">            session.setOutgoingWindow(outgoingWindow);</span>
+        }
+
+<span class="fc" id="L77">        this.connection.addSession(this);</span>
+
+<span class="fc" id="L79">        super.doOpen();</span>
+<span class="fc" id="L80">    }</span>
+
+    @Override
+    protected void doClose() {
+<span class="fc" id="L84">        this.connection.removeSession(this);</span>
+<span class="fc" id="L85">        super.doClose();</span>
+<span class="fc" id="L86">    }</span>
+
+    /**
+     * Perform an acknowledge of all delivered messages for all consumers active in this
+     * Session.
+     *
+     * @param ackType the acknowledgement type.
+     */
+    public void acknowledge(ProviderConstants.ACK_TYPE ackType) {
+<span class="nc bnc" id="L95" title="All 2 branches missed.">        for (AmqpConsumer consumer : consumers.values()) {</span>
+<span class="nc" id="L96">            consumer.acknowledge(ackType);</span>
+<span class="nc" id="L97">        }</span>
+<span class="nc" id="L98">    }</span>
+
+    /**
+     * Perform re-send of all delivered but not yet acknowledged messages for all consumers
+     * active in this Session.
+     *
+     * @throws Exception if an error occurs while performing the recover.
+     */
+    public void recover() throws Exception {
+<span class="nc bnc" id="L107" title="All 2 branches missed.">        for (AmqpConsumer consumer : consumers.values()) {</span>
+<span class="nc" id="L108">            consumer.recover();</span>
+<span class="nc" id="L109">        }</span>
+<span class="nc" id="L110">    }</span>
+
+    public AmqpProducer createProducer(JmsProducerInfo producerInfo) {
+<span class="fc" id="L113">        AmqpProducer producer = null;</span>
+
+<span class="fc bfc" id="L115" title="All 4 branches covered.">        if (producerInfo.getDestination() != null || connection.getProperties().isAnonymousRelaySupported()) {</span>
+<span class="fc" id="L116">            LOG.debug(&quot;Creating AmqpFixedProducer for: {}&quot;, producerInfo.getDestination());</span>
+<span class="fc" id="L117">            producer = new AmqpFixedProducer(this, producerInfo);</span>
+        } else {
+<span class="fc" id="L119">            LOG.debug(&quot;Creating an AmqpAnonymousFallbackProducer&quot;);</span>
+<span class="fc" id="L120">            producer = new AmqpAnonymousFallbackProducer(this, producerInfo);</span>
+        }
+
+<span class="fc" id="L123">        producer.setPresettle(connection.isPresettleProducers());</span>
+
+<span class="fc" id="L125">        return producer;</span>
+    }
+
+    public AmqpProducer getProducer(JmsProducerInfo producerInfo) {
+<span class="fc" id="L129">        return getProducer(producerInfo.getProducerId());</span>
+    }
+
+    public AmqpProducer getProducer(JmsProducerId producerId) {
+<span class="pc bpc" id="L133" title="1 of 2 branches missed.">        if (producerId.getProviderHint() instanceof AmqpProducer) {</span>
+<span class="fc" id="L134">            return (AmqpProducer) producerId.getProviderHint();</span>
+        }
+
+<span class="nc" id="L137">        return null;</span>
+    }
+
+    public AmqpConsumer createConsumer(JmsConsumerInfo consumerInfo) {
+<span class="fc" id="L141">        AmqpConsumer result = null;</span>
+
+<span class="pc bpc" id="L143" title="1 of 2 branches missed.">        if (consumerInfo.isBrowser()) {</span>
+<span class="nc" id="L144">            result = new AmqpQueueBrowser(this, consumerInfo);</span>
+        } else {
+<span class="fc" id="L146">            result = new AmqpConsumer(this, consumerInfo);</span>
+        }
+
+<span class="fc" id="L149">        result.setPresettle(connection.isPresettleConsumers());</span>
+<span class="fc" id="L150">        return result;</span>
+    }
+
+    public AmqpConsumer getConsumer(JmsConsumerInfo consumerInfo) {
+<span class="fc" id="L154">        return getConsumer(consumerInfo.getConsumerId());</span>
+    }
+
+    public AmqpConsumer getConsumer(JmsConsumerId consumerId) {
+<span class="pc bpc" id="L158" title="1 of 2 branches missed.">        if (consumerId.getProviderHint() instanceof AmqpConsumer) {</span>
+<span class="fc" id="L159">            return (AmqpConsumer) consumerId.getProviderHint();</span>
+        }
+<span class="nc" id="L161">        return this.consumers.get(consumerId);</span>
+    }
+
+    public AmqpTransactionContext getTransactionContext() {
+<span class="fc" id="L165">        return this.txContext;</span>
+    }
+
+    /**
+     * Begins a new Transaction using the given Transaction Id as the identifier.  The AMQP
+     * binary Transaction Id will be stored in the provider hint value of the given transaction.
+     *
+     * @param txId
+     *        The JMS Framework's assigned Transaction Id for the new TX.
+     * @param request
+     *        The request that will be signaled on completion of this operation.
+     *
+     * @throws Exception if an error occurs while performing the operation.
+     */
+    public void begin(JmsTransactionId txId, AsyncResult request) throws Exception {
+<span class="pc bpc" id="L180" title="1 of 2 branches missed.">        if (!this.resource.isTransacted()) {</span>
+<span class="nc" id="L181">            throw new IllegalStateException(&quot;Non-transacted Session cannot start a TX.&quot;);</span>
+        }
+
+<span class="fc" id="L184">        getTransactionContext().begin(txId, request);</span>
+<span class="fc" id="L185">    }</span>
+
+    /**
+     * Commit the currently running Transaction.
+     *
+     * @param request
+     *        The request that will be signaled on completion of this operation.
+     *
+     * @throws Exception if an error occurs while performing the operation.
+     */
+    public void commit(AsyncResult request) throws Exception {
+<span class="pc bpc" id="L196" title="1 of 2 branches missed.">        if (!this.resource.isTransacted()) {</span>
+<span class="nc" id="L197">            throw new IllegalStateException(&quot;Non-transacted Session cannot start a TX.&quot;);</span>
+        }
+
+<span class="fc" id="L200">        getTransactionContext().commit(request);</span>
+<span class="fc" id="L201">    }</span>
+
+    /**
+     * Roll back the currently running Transaction
+     *
+     * @param request
+     *        The request that will be signaled on completion of this operation.
+     *
+     * @throws Exception if an error occurs while performing the operation.
+     */
+    public void rollback(AsyncResult request) throws Exception {
+<span class="pc bpc" id="L212" title="1 of 2 branches missed.">        if (!this.resource.isTransacted()) {</span>
+<span class="nc" id="L213">            throw new IllegalStateException(&quot;Non-transacted Session cannot start a TX.&quot;);</span>
+        }
+
+<span class="fc" id="L216">        getTransactionContext().rollback(request);</span>
+<span class="fc" id="L217">    }</span>
+
+    void addResource(AmqpConsumer consumer) {
+<span class="fc" id="L220">        consumers.put(consumer.getConsumerId(), consumer);</span>
+<span class="fc" id="L221">    }</span>
+
+    void removeResource(AmqpConsumer consumer) {
+<span class="fc" id="L224">        consumers.remove(consumer.getConsumerId());</span>
+<span class="fc" id="L225">    }</span>
+
+    /**
+     * Query the Session to see if there are any registered consumer instances that have
+     * a durable subscription with the given subscription name.
+     *
+     * @param subscriptionName
+     *        the name of the subscription being searched for.
+     *
+     * @return true if there is a consumer that has the given subscription.
+     */
+    public boolean containsSubscription(String subscriptionName) {
+<span class="nc bnc" id="L237" title="All 2 branches missed.">        for (AmqpConsumer consumer : consumers.values()) {</span>
+<span class="nc bnc" id="L238" title="All 2 branches missed.">            if (subscriptionName.equals(consumer.getJmsResource().getSubscriptionName())) {</span>
+<span class="nc" id="L239">                return true;</span>
+            }
+<span class="nc" id="L241">        }</span>
+
+<span class="nc" id="L243">        return false;</span>
+    }
+
+    /**
+     * Call to send an error that occurs outside of the normal asynchronous processing
+     * of a session resource such as a remote close etc.
+     *
+     * @param error
+     *        The error to forward on to the Provider error event handler.
+     */
+    public void reportError(Exception error) {
+<span class="nc" id="L254">        getConnection().getProvider().fireProviderException(error);</span>
+<span class="nc" id="L255">    }</span>
+
+    public AmqpProvider getProvider() {
+<span class="fc" id="L258">        return this.connection.getProvider();</span>
+    }
+
+    public AmqpConnection getConnection() {
+<span class="fc" id="L262">        return this.connection;</span>
+    }
+
+    public JmsSessionId getSessionId() {
+<span class="fc" id="L266">        return this.resource.getSessionId();</span>
+    }
+
+    public Session getProtonSession() {
+<span class="fc" id="L270">        return this.getEndpoint();</span>
+    }
+
+    boolean isTransacted() {
+<span class="fc" id="L274">        return this.resource.isTransacted();</span>
+    }
+
+    boolean isAsyncAck() {
+<span class="pc bpc" id="L278" title="1 of 4 branches missed.">        return this.resource.isSendAcksAsync() || isTransacted();</span>
+    }
+
+    @Override
+    public String toString() {
+<span class="fc" id="L283">        return &quot;AmqpSession { &quot; + getSessionId() + &quot; }&quot;;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

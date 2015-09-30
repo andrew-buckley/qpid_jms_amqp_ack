@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpSerializedObjectDelegate.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp.message</a> &gt; <span class="el_source">AmqpSerializedObjectDelegate.java</span></div><h1>AmqpSerializedObjectDelegate.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp.message;
+
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.SERIALIZED_JAVA_OBJECT_CONTENT_TYPE;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
+
+import org.apache.qpid.jms.util.ClassLoadingAwareObjectInputStream;
+import org.apache.qpid.proton.amqp.Binary;
+import org.apache.qpid.proton.amqp.messaging.Data;
+import org.apache.qpid.proton.amqp.messaging.Section;
+import org.apache.qpid.proton.message.Message;
+
+/**
+ * Wrapper around an AMQP Message instance that will be treated as a JMS ObjectMessage
+ * type.
+ */
+public class AmqpSerializedObjectDelegate implements AmqpObjectTypeDelegate {
+
+    static final Data NULL_OBJECT_BODY;
+    static
+    {
+        byte[] bytes;
+        try {
+<span class="fc" id="L44">            bytes = getSerializedBytes(null);</span>
+<span class="nc" id="L45">        } catch (IOException e) {</span>
+<span class="nc" id="L46">            throw new RuntimeException(&quot;Failed to initialise null object body&quot;, e);</span>
+<span class="fc" id="L47">        }</span>
+
+<span class="fc" id="L49">        NULL_OBJECT_BODY = new Data(new Binary(bytes));</span>
+<span class="fc" id="L50">    }</span>
+
+    private final Message message;
+
+    /**
+     * Create a new delegate that uses Java serialization to store the message content.
+     *
+     * @param message
+     *        the AMQP message instance where the object is to be stored / read.
+     */
+<span class="fc" id="L60">    public AmqpSerializedObjectDelegate(Message message) {</span>
+<span class="fc" id="L61">        this.message = message;</span>
+<span class="fc" id="L62">        this.message.setContentType(SERIALIZED_JAVA_OBJECT_CONTENT_TYPE);</span>
+<span class="fc" id="L63">    }</span>
+
+    private static byte[] getSerializedBytes(Serializable value) throws IOException {
+<span class="fc" id="L66">        try (ByteArrayOutputStream baos = new ByteArrayOutputStream();</span>
+<span class="fc" id="L67">                ObjectOutputStream oos = new ObjectOutputStream(baos)) {</span>
+<span class="fc" id="L68">            oos.writeObject(value);</span>
+<span class="fc" id="L69">            oos.flush();</span>
+<span class="fc" id="L70">            oos.close();</span>
+
+<span class="fc" id="L72">            return baos.toByteArray();</span>
+<span class="pc bpc" id="L73" title="8 of 16 branches missed.">        }</span>
+    }
+
+    @Override
+    public Serializable getObject() throws IOException, ClassNotFoundException {
+<span class="fc" id="L78">        Binary bin = null;</span>
+
+<span class="fc" id="L80">        Section body = message.getBody();</span>
+<span class="fc bfc" id="L81" title="All 4 branches covered.">        if (body == null || body == NULL_OBJECT_BODY) {</span>
+<span class="fc" id="L82">            return null;</span>
+<span class="fc bfc" id="L83" title="All 2 branches covered.">        } else if (body instanceof Data) {</span>
+<span class="fc" id="L84">            bin = ((Data) body).getValue();</span>
+        } else {
+<span class="fc" id="L86">            throw new IllegalStateException(&quot;Unexpected body type: &quot; + body.getClass().getSimpleName());</span>
+        }
+
+<span class="fc bfc" id="L89" title="All 2 branches covered.">        if (bin == null) {</span>
+<span class="fc" id="L90">            return null;</span>
+        } else {
+<span class="fc" id="L92">            Serializable serialized = null;</span>
+
+<span class="pc" id="L94">            try (ByteArrayInputStream bais = new ByteArrayInputStream(bin.getArray(), bin.getArrayOffset(), bin.getLength());</span>
+<span class="fc" id="L95">                 ClassLoadingAwareObjectInputStream objIn = new ClassLoadingAwareObjectInputStream(bais)) {</span>
+
+<span class="fc" id="L97">                serialized = (Serializable) objIn.readObject();</span>
+<span class="pc bpc" id="L98" title="12 of 16 branches missed.">            }</span>
+
+<span class="fc" id="L100">            return serialized;</span>
+        }
+    }
+
+    @Override
+    public void setObject(Serializable value) throws IOException {
+<span class="fc bfc" id="L106" title="All 2 branches covered.">        if(value == null) {</span>
+<span class="fc" id="L107">            message.setBody(NULL_OBJECT_BODY);</span>
+        } else {
+<span class="fc" id="L109">            byte[] bytes = getSerializedBytes(value);</span>
+<span class="fc" id="L110">            message.setBody(new Data(new Binary(bytes)));</span>
+        }
+<span class="fc" id="L112">    }</span>
+
+    @Override
+    public void onSend() {
+<span class="fc" id="L116">        this.message.setContentType(SERIALIZED_JAVA_OBJECT_CONTENT_TYPE);</span>
+<span class="fc bfc" id="L117" title="All 2 branches covered.">        if(message.getBody() == null) {</span>
+<span class="fc" id="L118">            message.setBody(NULL_OBJECT_BODY);</span>
+        }
+<span class="fc" id="L120">    }</span>
+
+    @Override
+    public boolean isAmqpTypeEncoded() {
+<span class="fc" id="L124">        return false;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

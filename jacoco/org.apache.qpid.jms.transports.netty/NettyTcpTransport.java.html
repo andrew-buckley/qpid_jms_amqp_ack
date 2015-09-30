@@ -1,0 +1,318 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>NettyTcpTransport.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.transports.netty</a> &gt; <span class="el_source">NettyTcpTransport.java</span></div><h1>NettyTcpTransport.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.transports.netty;
+
+import io.netty.bootstrap.Bootstrap;
+import io.netty.buffer.ByteBuf;
+import io.netty.channel.Channel;
+import io.netty.channel.ChannelFuture;
+import io.netty.channel.ChannelFutureListener;
+import io.netty.channel.ChannelHandlerContext;
+import io.netty.channel.ChannelInitializer;
+import io.netty.channel.ChannelOption;
+import io.netty.channel.EventLoopGroup;
+import io.netty.channel.FixedRecvByteBufAllocator;
+import io.netty.channel.SimpleChannelInboundHandler;
+import io.netty.channel.nio.NioEventLoopGroup;
+import io.netty.channel.socket.nio.NioSocketChannel;
+
+import java.io.IOException;
+import java.net.URI;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import org.apache.qpid.jms.transports.Transport;
+import org.apache.qpid.jms.transports.TransportListener;
+import org.apache.qpid.jms.transports.TransportOptions;
+import org.apache.qpid.jms.util.IOExceptionSupport;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * TCP based transport that uses Netty as the underlying IO layer.
+ */
+public class NettyTcpTransport implements Transport {
+
+<span class="fc" id="L51">    private static final Logger LOG = LoggerFactory.getLogger(NettyTcpTransport.class);</span>
+
+    private static final int QUIET_PERIOD = 20;
+    private static final int SHUTDOWN_TIMEOUT = 100;
+
+    protected Bootstrap bootstrap;
+    protected EventLoopGroup group;
+    protected Channel channel;
+    protected TransportListener listener;
+    protected TransportOptions options;
+    protected final URI remote;
+
+<span class="fc" id="L63">    private final AtomicBoolean connected = new AtomicBoolean();</span>
+<span class="fc" id="L64">    private final AtomicBoolean closed = new AtomicBoolean();</span>
+<span class="fc" id="L65">    private final CountDownLatch connectLatch = new CountDownLatch(1);</span>
+    private IOException failureCause;
+
+    /**
+     * Create a new transport instance
+     *
+     * @param remoteLocation
+     *        the URI that defines the remote resource to connect to.
+     * @param options
+     *        the transport options used to configure the socket connection.
+     */
+    public NettyTcpTransport(URI remoteLocation, TransportOptions options) {
+<span class="fc" id="L77">        this(null, remoteLocation, options);</span>
+<span class="fc" id="L78">    }</span>
+
+    /**
+     * Create a new transport instance
+     *
+     * @param listener
+     *        the TransportListener that will receive events from this Transport.
+     * @param remoteLocation
+     *        the URI that defines the remote resource to connect to.
+     * @param options
+     *        the transport options used to configure the socket connection.
+     */
+<span class="fc" id="L90">    public NettyTcpTransport(TransportListener listener, URI remoteLocation, TransportOptions options) {</span>
+<span class="fc" id="L91">        this.options = options;</span>
+<span class="fc" id="L92">        this.listener = listener;</span>
+<span class="fc" id="L93">        this.remote = remoteLocation;</span>
+<span class="fc" id="L94">    }</span>
+
+    @Override
+    public void connect() throws IOException {
+
+<span class="fc bfc" id="L99" title="All 2 branches covered.">        if (listener == null) {</span>
+<span class="fc" id="L100">            throw new IllegalStateException(&quot;A transport listener must be set before connection attempts.&quot;);</span>
+        }
+
+<span class="fc" id="L103">        group = new NioEventLoopGroup(1);</span>
+
+<span class="fc" id="L105">        bootstrap = new Bootstrap();</span>
+<span class="fc" id="L106">        bootstrap.group(group);</span>
+<span class="fc" id="L107">        bootstrap.channel(NioSocketChannel.class);</span>
+<span class="fc" id="L108">        bootstrap.handler(new ChannelInitializer&lt;Channel&gt;() {</span>
+
+            @Override
+            public void initChannel(Channel connectedChannel) throws Exception {
+<span class="fc" id="L112">                configureChannel(connectedChannel);</span>
+<span class="fc" id="L113">            }</span>
+        });
+
+<span class="fc" id="L116">        configureNetty(bootstrap, getTransportOptions());</span>
+
+<span class="fc" id="L118">        ChannelFuture future = bootstrap.connect(getRemoteHost(), getRemotePort());</span>
+<span class="fc" id="L119">        future.addListener(new ChannelFutureListener() {</span>
+
+            @Override
+            public void operationComplete(ChannelFuture future) throws Exception {
+<span class="fc bfc" id="L123" title="All 2 branches covered.">                if (future.isSuccess()) {</span>
+<span class="fc" id="L124">                    handleConnected(future.channel());</span>
+<span class="pc bpc" id="L125" title="1 of 2 branches missed.">                } else if (future.isCancelled()) {</span>
+<span class="nc" id="L126">                    connectionFailed(new IOException(&quot;Connection attempt was cancelled&quot;));</span>
+                } else {
+<span class="fc" id="L128">                    connectionFailed(IOExceptionSupport.create(future.cause()));</span>
+                }
+<span class="fc" id="L130">            }</span>
+        });
+
+        try {
+<span class="fc" id="L134">            connectLatch.await();</span>
+<span class="nc" id="L135">        } catch (InterruptedException ex) {</span>
+<span class="nc" id="L136">            LOG.debug(&quot;Transport connection was interrupted.&quot;);</span>
+<span class="nc" id="L137">            Thread.interrupted();</span>
+<span class="nc" id="L138">            failureCause = IOExceptionSupport.create(ex);</span>
+<span class="fc" id="L139">        }</span>
+
+<span class="fc bfc" id="L141" title="All 2 branches covered.">        if (failureCause != null) {</span>
+            // Close out any Netty resources now as they are no longer needed.
+<span class="pc bpc" id="L143" title="1 of 2 branches missed.">            if (channel != null) {</span>
+<span class="nc" id="L144">                channel.close();</span>
+<span class="nc" id="L145">                channel = null;</span>
+            }
+<span class="pc bpc" id="L147" title="1 of 2 branches missed.">            if (group != null) {</span>
+<span class="fc" id="L148">                group.shutdownGracefully(QUIET_PERIOD, SHUTDOWN_TIMEOUT, TimeUnit.MILLISECONDS);</span>
+<span class="fc" id="L149">                group = null;</span>
+            }
+
+<span class="fc" id="L152">            throw failureCause;</span>
+        }
+<span class="fc" id="L154">    }</span>
+
+    @Override
+    public boolean isConnected() {
+<span class="fc" id="L158">        return connected.get();</span>
+    }
+
+    @Override
+    public void close() throws IOException {
+<span class="fc bfc" id="L163" title="All 2 branches covered.">        if (closed.compareAndSet(false, true)) {</span>
+<span class="fc" id="L164">            connected.set(false);</span>
+<span class="fc bfc" id="L165" title="All 2 branches covered.">            if (channel != null) {</span>
+<span class="fc" id="L166">                channel.close().syncUninterruptibly();</span>
+            }
+<span class="fc bfc" id="L168" title="All 2 branches covered.">            if (group != null) {</span>
+<span class="fc" id="L169">                group.shutdownGracefully(QUIET_PERIOD, SHUTDOWN_TIMEOUT, TimeUnit.MILLISECONDS);</span>
+            }
+        }
+<span class="fc" id="L172">    }</span>
+
+    @Override
+    public ByteBuf allocateSendBuffer(int size) throws IOException {
+<span class="fc" id="L176">        checkConnected();</span>
+<span class="fc" id="L177">        return channel.alloc().ioBuffer(size, size);</span>
+    }
+
+    @Override
+    public void send(ByteBuf output) throws IOException {
+<span class="fc" id="L182">        checkConnected();</span>
+<span class="fc" id="L183">        int length = output.readableBytes();</span>
+<span class="fc bfc" id="L184" title="All 2 branches covered.">        if (length == 0) {</span>
+<span class="fc" id="L185">            return;</span>
+        }
+
+<span class="fc" id="L188">        LOG.trace(&quot;Attempted write of: {} bytes&quot;, length);</span>
+
+<span class="fc" id="L190">        channel.writeAndFlush(output);</span>
+<span class="fc" id="L191">    }</span>
+
+    @Override
+    public TransportListener getTransportListener() {
+<span class="fc" id="L195">        return listener;</span>
+    }
+
+    @Override
+    public void setTransportListener(TransportListener listener) {
+<span class="fc" id="L200">        this.listener = listener;</span>
+<span class="fc" id="L201">    }</span>
+
+    @Override
+    public TransportOptions getTransportOptions() {
+<span class="fc bfc" id="L205" title="All 2 branches covered.">        if (options == null) {</span>
+<span class="fc" id="L206">            options = TransportOptions.INSTANCE;</span>
+        }
+
+<span class="fc" id="L209">        return options;</span>
+    }
+
+    @Override
+    public URI getRemoteLocation() {
+<span class="fc" id="L214">        return remote;</span>
+    }
+
+    //----- Internal implementation details, can be overridden as needed --//
+
+    protected String getRemoteHost() {
+<span class="fc" id="L220">        return remote.getHost();</span>
+    }
+
+    protected int getRemotePort() {
+<span class="fc bfc" id="L224" title="All 2 branches covered.">        return remote.getPort() != -1 ? remote.getPort() : getTransportOptions().getDefaultTcpPort();</span>
+    }
+
+    protected void configureNetty(Bootstrap bootstrap, TransportOptions options) {
+<span class="fc" id="L228">        bootstrap.option(ChannelOption.TCP_NODELAY, options.isTcpNoDelay());</span>
+<span class="fc" id="L229">        bootstrap.option(ChannelOption.CONNECT_TIMEOUT_MILLIS, options.getConnectTimeout());</span>
+<span class="fc" id="L230">        bootstrap.option(ChannelOption.SO_KEEPALIVE, options.isTcpKeepAlive());</span>
+<span class="fc" id="L231">        bootstrap.option(ChannelOption.SO_LINGER, options.getSoLinger());</span>
+<span class="fc" id="L232">        bootstrap.option(ChannelOption.ALLOCATOR, PartialPooledByteBufAllocator.INSTANCE);</span>
+
+<span class="pc bpc" id="L234" title="1 of 2 branches missed.">        if (options.getSendBufferSize() != -1) {</span>
+<span class="fc" id="L235">            bootstrap.option(ChannelOption.SO_SNDBUF, options.getSendBufferSize());</span>
+        }
+
+<span class="pc bpc" id="L238" title="1 of 2 branches missed.">        if (options.getReceiveBufferSize() != -1) {</span>
+<span class="fc" id="L239">            bootstrap.option(ChannelOption.SO_RCVBUF, options.getReceiveBufferSize());</span>
+<span class="fc" id="L240">            bootstrap.option(ChannelOption.RCVBUF_ALLOCATOR, new FixedRecvByteBufAllocator(options.getReceiveBufferSize()));</span>
+        }
+
+<span class="pc bpc" id="L243" title="1 of 2 branches missed.">        if (options.getTrafficClass() != -1) {</span>
+<span class="fc" id="L244">            bootstrap.option(ChannelOption.IP_TOS, options.getTrafficClass());</span>
+        }
+<span class="fc" id="L246">    }</span>
+
+    protected void configureChannel(Channel channel) throws Exception {
+<span class="fc" id="L249">        channel.pipeline().addLast(new NettyTcpTransportHandler());</span>
+<span class="fc" id="L250">    }</span>
+
+    protected void handleConnected(Channel channel) throws Exception {
+<span class="fc" id="L253">        connectionEstablished(channel);</span>
+<span class="fc" id="L254">    }</span>
+
+    //----- State change handlers and checks ---------------------------------//
+
+    /**
+     * Called when the transport has successfully connected and is ready for use.
+     */
+    protected void connectionEstablished(Channel connectedChannel) {
+<span class="fc" id="L262">        channel = connectedChannel;</span>
+<span class="fc" id="L263">        connected.set(true);</span>
+<span class="fc" id="L264">        connectLatch.countDown();</span>
+<span class="fc" id="L265">    }</span>
+
+    /**
+     * Called when the transport connection failed and an error should be returned.
+     * @param cause
+     */
+    protected void connectionFailed(IOException cause) {
+<span class="fc" id="L272">        failureCause = IOExceptionSupport.create(cause);</span>
+<span class="fc" id="L273">        connected.set(false);</span>
+<span class="fc" id="L274">        connectLatch.countDown();</span>
+<span class="fc" id="L275">    }</span>
+
+    private void checkConnected() throws IOException {
+<span class="fc bfc" id="L278" title="All 2 branches covered.">        if (!connected.get()) {</span>
+<span class="fc" id="L279">            throw new IOException(&quot;Cannot send to a non-connected transport.&quot;);</span>
+        }
+<span class="fc" id="L281">    }</span>
+
+    //----- Handle connection events -----------------------------------------//
+
+<span class="fc" id="L285">    private class NettyTcpTransportHandler extends SimpleChannelInboundHandler&lt;ByteBuf&gt; {</span>
+
+        @Override
+        public void channelActive(ChannelHandlerContext context) throws Exception {
+<span class="fc" id="L289">            LOG.trace(&quot;Channel has become active! Channel is {}&quot;, context.channel());</span>
+<span class="fc" id="L290">        }</span>
+
+        @Override
+        public void channelInactive(ChannelHandlerContext context) throws Exception {
+<span class="fc" id="L294">            LOG.trace(&quot;Channel has gone inactive! Channel is {}&quot;, context.channel());</span>
+<span class="fc bfc" id="L295" title="All 2 branches covered.">            if (!closed.get()) {</span>
+<span class="fc" id="L296">                connected.set(false);</span>
+<span class="fc" id="L297">                listener.onTransportClosed();</span>
+            }
+<span class="fc" id="L299">        }</span>
+
+        @Override
+        public void exceptionCaught(ChannelHandlerContext context, Throwable cause) throws Exception {
+<span class="fc" id="L303">            LOG.trace(&quot;Exception on channel! Channel is {}&quot;, context.channel());</span>
+<span class="pc bpc" id="L304" title="1 of 2 branches missed.">            if (!closed.get()) {</span>
+<span class="nc" id="L305">                connected.set(false);</span>
+<span class="nc" id="L306">                listener.onTransportError(cause);</span>
+            }
+<span class="fc" id="L308">        }</span>
+
+        @Override
+        protected void channelRead0(ChannelHandlerContext ctx, ByteBuf buffer) throws Exception {
+<span class="fc" id="L312">            LOG.trace(&quot;New data read: {} bytes incoming: {}&quot;, buffer.readableBytes(), buffer);</span>
+<span class="fc" id="L313">            listener.onData(buffer);</span>
+<span class="fc" id="L314">        }</span>
+    }
+}
+
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

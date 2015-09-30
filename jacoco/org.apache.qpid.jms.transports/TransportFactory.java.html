@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TransportFactory.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.transports</a> &gt; <span class="el_source">TransportFactory.java</span></div><h1>TransportFactory.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.transports;
+
+import java.io.IOException;
+import java.net.URI;
+import java.util.Map;
+
+import org.apache.qpid.jms.util.FactoryFinder;
+import org.apache.qpid.jms.util.PropertyUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Interface that all Transport types must implement.
+ */
+<span class="fc" id="L31">public abstract class TransportFactory {</span>
+
+<span class="fc" id="L33">    private static final Logger LOG = LoggerFactory.getLogger(TransportFactory.class);</span>
+
+<span class="fc" id="L35">    private static final FactoryFinder&lt;TransportFactory&gt; TRANSPORT_FACTORY_FINDER =</span>
+        new FactoryFinder&lt;TransportFactory&gt;(TransportFactory.class,
+            &quot;META-INF/services/&quot; + TransportFactory.class.getPackage().getName().replace(&quot;.&quot;, &quot;/&quot;) + &quot;/&quot;);
+
+    /**
+     * Creates an instance of the given Transport and configures it using the
+     * properties set on the given remote broker URI.
+     *
+     * @param remoteURI
+     *        The URI used to connect to a remote Peer.
+     *
+     * @return a new Transport instance.
+     *
+     * @throws Exception if an error occurs while creating the Transport instance.
+     */
+    public Transport createTransport(URI remoteURI) throws Exception {
+<span class="fc" id="L51">        Map&lt;String, String&gt; map = PropertyUtil.parseQuery(remoteURI.getQuery());</span>
+<span class="fc" id="L52">        Map&lt;String, String&gt; transportURIOptions = PropertyUtil.filterProperties(map, &quot;transport.&quot;);</span>
+
+<span class="fc" id="L54">        remoteURI = PropertyUtil.replaceQuery(remoteURI, map);</span>
+
+<span class="fc" id="L56">        TransportOptions transportOptions = doCreateTransportOptions();</span>
+
+<span class="fc" id="L58">        Map&lt;String, String&gt; unused = PropertyUtil.setProperties(transportOptions, transportURIOptions);</span>
+<span class="fc bfc" id="L59" title="All 2 branches covered.">        if (!unused.isEmpty()) {</span>
+<span class="fc" id="L60">            String msg = &quot; Not all transport options could be set on the &quot; + getName() +</span>
+                         &quot; Transport. Check the options are spelled correctly.&quot; +
+                         &quot; Unused parameters=[&quot; + unused + &quot;].&quot; +
+                         &quot; This provider instance cannot be started.&quot;;
+<span class="fc" id="L64">            throw new IllegalArgumentException(msg);</span>
+        }
+
+<span class="fc" id="L67">        Transport result = doCreateTransport(remoteURI, transportOptions);</span>
+
+<span class="fc" id="L69">        return result;</span>
+    }
+
+    /**
+     * Create and return an instance of TransportOptions appropriate for the Transport
+     * type that this factory will return.
+     *
+     * @return a newly allocated TransportOptions instance appropriate to the factory.
+     */
+    protected TransportOptions doCreateTransportOptions() {
+<span class="fc" id="L79">        return new TransportOptions();</span>
+    }
+
+    /**
+     * Create the actual Transport instance for this factory using the provided URI and
+     * TransportOptions instances.
+     *
+     * @param remoteURI
+     *        The URI used to connect to a remote Peer.
+     * @param transportOptions
+     *        The TransportOptions used to configure the new Transport.
+     *
+     * @return a newly created and configured Transport instance.
+     *
+     * @throws Exception if an error occurs while creating the Transport instance.
+     */
+    protected abstract Transport doCreateTransport(URI remoteURI, TransportOptions transportOptions) throws Exception;
+
+    /**
+     * @return the name of this Transport.
+     */
+    public abstract String getName();
+
+    /**
+     * Static create method that performs the TransportFactory search and handles the
+     * configuration and setup.
+     *
+     * @param transportKey
+     *        The transport type name used to locate a TransportFactory.
+     * @param remoteURI
+     *        the URI of the remote peer.
+     *
+     * @return a new Transport instance that is ready for use.
+     *
+     * @throws Exception if an error occurs while creating the Transport instance.
+     */
+    public static Transport create(String transportKey, URI remoteURI) throws Exception {
+<span class="fc" id="L116">        Transport result = null;</span>
+
+        try {
+<span class="fc" id="L119">            TransportFactory factory = findTransportFactory(transportKey);</span>
+<span class="fc" id="L120">            result = factory.createTransport(remoteURI);</span>
+<span class="fc" id="L121">        } catch (Exception ex) {</span>
+<span class="fc" id="L122">            LOG.error(&quot;Failed to create Transport instance for {}, due to: {}&quot;, remoteURI.getScheme(), ex);</span>
+<span class="fc" id="L123">            LOG.trace(&quot;Error: &quot;, ex);</span>
+<span class="fc" id="L124">            throw ex;</span>
+<span class="fc" id="L125">        }</span>
+
+<span class="fc" id="L127">        return result;</span>
+    }
+
+    /**
+     * Searches for a TransportFactory by using the scheme from the given key.
+     *
+     * The search first checks the local cache of Transport factories before moving on
+     * to search in the class-path.
+     *
+     * @param transportKey
+     *        The transport type name used to locate a TransportFactory.
+     *
+     * @return a Transport factory instance matching the transport key.
+     *
+     * @throws IOException if an error occurs while locating the factory.
+     */
+    public static TransportFactory findTransportFactory(String transportKey) throws IOException {
+<span class="fc bfc" id="L144" title="All 2 branches covered.">        if (transportKey == null) {</span>
+<span class="fc" id="L145">            throw new IOException(&quot;No Transport key specified&quot;);</span>
+        }
+
+<span class="fc" id="L148">        TransportFactory factory = null;</span>
+        try {
+<span class="fc" id="L150">            factory = TRANSPORT_FACTORY_FINDER.newInstance(transportKey);</span>
+<span class="fc" id="L151">        } catch (Throwable e) {</span>
+<span class="fc" id="L152">            throw new IOException(&quot;Transport type NOT recognized: [&quot; + transportKey + &quot;]&quot;, e);</span>
+<span class="fc" id="L153">        }</span>
+
+<span class="fc" id="L155">        return factory;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

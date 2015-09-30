@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>TypeConversionSupport.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.util</a> &gt; <span class="el_source">TypeConversionSupport.java</span></div><h1>TypeConversionSupport.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.util;
+
+import java.util.Date;
+import java.util.HashMap;
+
+<span class="pc bpc" id="L22" title="1 of 2 branches missed.">public final class TypeConversionSupport {</span>
+
+    static class ConversionKey {
+        final Class&lt;?&gt; from;
+        final Class&lt;?&gt; to;
+        final int hashCode;
+
+<span class="fc" id="L29">        public ConversionKey(Class&lt;?&gt; from, Class&lt;?&gt; to) {</span>
+<span class="fc" id="L30">            this.from = from;</span>
+<span class="fc" id="L31">            this.to = to;</span>
+<span class="fc" id="L32">            this.hashCode = from.hashCode() ^ (to.hashCode() &lt;&lt; 1);</span>
+<span class="fc" id="L33">        }</span>
+
+        @Override
+        public boolean equals(Object o) {
+<span class="pc bpc" id="L37" title="1 of 2 branches missed.">            if (this == o) {</span>
+<span class="nc" id="L38">                return true;</span>
+            }
+
+<span class="pc bpc" id="L41" title="2 of 4 branches missed.">            if (o == null || o.getClass() != this.getClass()) {</span>
+<span class="nc" id="L42">                return false;</span>
+            }
+
+<span class="fc" id="L45">            ConversionKey x = (ConversionKey) o;</span>
+<span class="pc bpc" id="L46" title="2 of 4 branches missed.">            return x.from == from &amp;&amp; x.to == to;</span>
+        }
+
+        @Override
+        public int hashCode() {
+<span class="fc" id="L51">            return hashCode;</span>
+        }
+    }
+
+    interface Converter {
+        Object convert(Object value);
+    }
+
+<span class="fc" id="L59">    private static final HashMap&lt;ConversionKey, Converter&gt; CONVERSION_MAP = new HashMap&lt;ConversionKey, Converter&gt;();</span>
+
+    static {
+<span class="fc" id="L62">        Converter toStringConverter = new Converter() {</span>
+            @Override
+            public Object convert(Object value) {
+<span class="fc" id="L65">                return value.toString();</span>
+            }
+        };
+<span class="fc" id="L68">        CONVERSION_MAP.put(new ConversionKey(Boolean.class, String.class), toStringConverter);</span>
+<span class="fc" id="L69">        CONVERSION_MAP.put(new ConversionKey(Byte.class, String.class), toStringConverter);</span>
+<span class="fc" id="L70">        CONVERSION_MAP.put(new ConversionKey(Short.class, String.class), toStringConverter);</span>
+<span class="fc" id="L71">        CONVERSION_MAP.put(new ConversionKey(Integer.class, String.class), toStringConverter);</span>
+<span class="fc" id="L72">        CONVERSION_MAP.put(new ConversionKey(Long.class, String.class), toStringConverter);</span>
+<span class="fc" id="L73">        CONVERSION_MAP.put(new ConversionKey(Float.class, String.class), toStringConverter);</span>
+<span class="fc" id="L74">        CONVERSION_MAP.put(new ConversionKey(Double.class, String.class), toStringConverter);</span>
+
+<span class="fc" id="L76">        CONVERSION_MAP.put(new ConversionKey(String.class, Boolean.class), new Converter() {</span>
+            @Override
+            public Object convert(Object value) {
+<span class="fc" id="L79">                return Boolean.valueOf((String) value);</span>
+            }
+        });
+<span class="fc" id="L82">        CONVERSION_MAP.put(new ConversionKey(String.class, Byte.class), new Converter() {</span>
+            @Override
+            public Object convert(Object value) {
+<span class="fc" id="L85">                return Byte.valueOf((String) value);</span>
+            }
+        });
+<span class="fc" id="L88">        CONVERSION_MAP.put(new ConversionKey(String.class, Short.class), new Converter() {</span>
+            @Override
+            public Object convert(Object value) {
+<span class="fc" id="L91">                return Short.valueOf((String) value);</span>
+            }
+        });
+<span class="fc" id="L94">        CONVERSION_MAP.put(new ConversionKey(String.class, Integer.class), new Converter() {</span>
+            @Override
+            public Object convert(Object value) {
+<span class="fc" id="L97">                return Integer.valueOf((String) value);</span>
+            }
+        });
+<span class="fc" id="L100">        CONVERSION_MAP.put(new ConversionKey(String.class, Long.class), new Converter() {</span>
+            @Override
+            public Object convert(Object value) {
+<span class="fc" id="L103">                return Long.valueOf((String) value);</span>
+            }
+        });
+<span class="fc" id="L106">        CONVERSION_MAP.put(new ConversionKey(String.class, Float.class), new Converter() {</span>
+            @Override
+            public Object convert(Object value) {
+<span class="fc" id="L109">                return Float.valueOf((String) value);</span>
+            }
+        });
+<span class="fc" id="L112">        CONVERSION_MAP.put(new ConversionKey(String.class, Double.class), new Converter() {</span>
+            @Override
+            public Object convert(Object value) {
+<span class="fc" id="L115">                return Double.valueOf((String) value);</span>
+            }
+        });
+
+<span class="fc" id="L119">        Converter longConverter = new Converter() {</span>
+            @Override
+            public Object convert(Object value) {
+<span class="fc" id="L122">                return Long.valueOf(((Number) value).longValue());</span>
+            }
+        };
+<span class="fc" id="L125">        CONVERSION_MAP.put(new ConversionKey(Byte.class, Long.class), longConverter);</span>
+<span class="fc" id="L126">        CONVERSION_MAP.put(new ConversionKey(Short.class, Long.class), longConverter);</span>
+<span class="fc" id="L127">        CONVERSION_MAP.put(new ConversionKey(Integer.class, Long.class), longConverter);</span>
+<span class="fc" id="L128">        CONVERSION_MAP.put(new ConversionKey(Date.class, Long.class), new Converter() {</span>
+            @Override
+            public Object convert(Object value) {
+<span class="nc" id="L131">                return Long.valueOf(((Date) value).getTime());</span>
+            }
+        });
+
+<span class="fc" id="L135">        Converter intConverter = new Converter() {</span>
+            @Override
+            public Object convert(Object value) {
+<span class="fc" id="L138">                return Integer.valueOf(((Number) value).intValue());</span>
+            }
+        };
+<span class="fc" id="L141">        CONVERSION_MAP.put(new ConversionKey(Byte.class, Integer.class), intConverter);</span>
+<span class="fc" id="L142">        CONVERSION_MAP.put(new ConversionKey(Short.class, Integer.class), intConverter);</span>
+
+<span class="fc" id="L144">        CONVERSION_MAP.put(new ConversionKey(Byte.class, Short.class), new Converter() {</span>
+            @Override
+            public Object convert(Object value) {
+<span class="fc" id="L147">                return Short.valueOf(((Number) value).shortValue());</span>
+            }
+        });
+
+<span class="fc" id="L151">        CONVERSION_MAP.put(new ConversionKey(Float.class, Double.class), new Converter() {</span>
+            @Override
+            public Object convert(Object value) {
+<span class="fc" id="L154">                return new Double(((Number) value).doubleValue());</span>
+            }
+        });
+<span class="fc" id="L157">    }</span>
+
+    public static Object convert(Object value, Class&lt;?&gt; toClass) {
+
+<span class="pc bpc" id="L161" title="3 of 6 branches missed.">        assert value != null &amp;&amp; toClass != null;</span>
+
+<span class="fc bfc" id="L163" title="All 2 branches covered.">        if (value.getClass() == toClass) {</span>
+<span class="fc" id="L164">            return value;</span>
+        }
+
+<span class="fc" id="L167">        Class&lt;?&gt; fromClass = value.getClass();</span>
+
+<span class="pc bpc" id="L169" title="1 of 2 branches missed.">        if (fromClass.isPrimitive()) {</span>
+<span class="nc" id="L170">            fromClass = convertPrimitiveTypeToWrapperType(fromClass);</span>
+        }
+
+<span class="fc bfc" id="L173" title="All 2 branches covered.">        if (toClass.isPrimitive()) {</span>
+<span class="fc" id="L174">            toClass = convertPrimitiveTypeToWrapperType(toClass);</span>
+        }
+
+<span class="fc" id="L177">        Converter c = CONVERSION_MAP.get(new ConversionKey(fromClass, toClass));</span>
+<span class="fc bfc" id="L178" title="All 2 branches covered.">        if (c == null) {</span>
+<span class="fc" id="L179">            return null;</span>
+        }
+
+<span class="fc" id="L182">        return c.convert(value);</span>
+    }
+
+    private static Class&lt;?&gt; convertPrimitiveTypeToWrapperType(Class&lt;?&gt; type) {
+<span class="fc" id="L186">        Class&lt;?&gt; rc = type;</span>
+<span class="pc bpc" id="L187" title="1 of 2 branches missed.">        if (type.isPrimitive()) {</span>
+<span class="fc bfc" id="L188" title="All 2 branches covered.">            if (type == int.class) {</span>
+<span class="fc" id="L189">                rc = Integer.class;</span>
+<span class="fc bfc" id="L190" title="All 2 branches covered.">            } else if (type == long.class) {</span>
+<span class="fc" id="L191">                rc = Long.class;</span>
+<span class="fc bfc" id="L192" title="All 2 branches covered.">            } else if (type == double.class) {</span>
+<span class="fc" id="L193">                rc = Double.class;</span>
+<span class="pc bpc" id="L194" title="1 of 2 branches missed.">            } else if (type == float.class) {</span>
+<span class="nc" id="L195">                rc = Float.class;</span>
+<span class="pc bpc" id="L196" title="1 of 2 branches missed.">            } else if (type == short.class) {</span>
+<span class="nc" id="L197">                rc = Short.class;</span>
+<span class="pc bpc" id="L198" title="1 of 2 branches missed.">            } else if (type == byte.class) {</span>
+<span class="nc" id="L199">                rc = Byte.class;</span>
+<span class="pc bpc" id="L200" title="1 of 2 branches missed.">            } else if (type == boolean.class) {</span>
+<span class="fc" id="L201">                rc = Boolean.class;</span>
+            }
+        }
+
+<span class="fc" id="L205">        return rc;</span>
+    }
+
+<span class="nc" id="L208">    private TypeConversionSupport() {}</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

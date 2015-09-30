@@ -1,0 +1,142 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpJmsTextMessageFacade.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp.message</a> &gt; <span class="el_source">AmqpJmsTextMessageFacade.java</span></div><h1>AmqpJmsTextMessageFacade.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp.message;
+
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_MSG_TYPE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_TEXT_MESSAGE;
+
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+
+import javax.jms.JMSException;
+
+import org.apache.qpid.jms.exceptions.JmsExceptionSupport;
+import org.apache.qpid.jms.message.facade.JmsTextMessageFacade;
+import org.apache.qpid.jms.provider.amqp.AmqpConnection;
+import org.apache.qpid.jms.provider.amqp.AmqpConsumer;
+import org.apache.qpid.proton.amqp.Binary;
+import org.apache.qpid.proton.amqp.messaging.AmqpValue;
+import org.apache.qpid.proton.amqp.messaging.Data;
+import org.apache.qpid.proton.amqp.messaging.Section;
+import org.apache.qpid.proton.message.Message;
+
+/**
+ * Wrapper around an AMQP Message instance that will be treated as a JMS TextMessage
+ * type.
+ */
+public class AmqpJmsTextMessageFacade extends AmqpJmsMessageFacade implements JmsTextMessageFacade {
+
+    private final Charset charset;
+
+    /**
+     * Create a new AMQP Message facade ready for sending.
+     *
+     * @param connection
+     *        the AmqpConnection that under which this facade was created.
+     */
+    public AmqpJmsTextMessageFacade(AmqpConnection connection) {
+<span class="fc" id="L55">        super(connection);</span>
+<span class="fc" id="L56">        setMessageAnnotation(JMS_MSG_TYPE, JMS_TEXT_MESSAGE);</span>
+<span class="fc" id="L57">        setText(null);</span>
+<span class="fc" id="L58">        charset = StandardCharsets.UTF_8;</span>
+<span class="fc" id="L59">    }</span>
+
+    /**
+     * Creates a new Facade around an incoming AMQP Message for dispatch to the
+     * JMS Consumer instance.
+     *
+     * @param consumer
+     *        the consumer that received this message.
+     * @param message
+     *        the incoming Message instance that is being wrapped.
+     * @param charset
+     *        the character set to use when decoding the text when the body is a Data section
+     */
+    public AmqpJmsTextMessageFacade(AmqpConsumer consumer, Message message, Charset charset) {
+<span class="fc" id="L73">        super(consumer, message);</span>
+<span class="fc" id="L74">        this.charset = charset;</span>
+<span class="fc" id="L75">    }</span>
+
+    /**
+     * @return the appropriate byte value that indicates the type of message this is.
+     */
+    @Override
+    public byte getJmsMsgType() {
+<span class="fc" id="L82">        return JMS_TEXT_MESSAGE;</span>
+    }
+
+    @Override
+    public AmqpJmsTextMessageFacade copy() throws JMSException {
+<span class="fc" id="L87">        AmqpJmsTextMessageFacade copy = new AmqpJmsTextMessageFacade(connection);</span>
+<span class="fc" id="L88">        copyInto(copy);</span>
+<span class="fc" id="L89">        copy.setText(getText());</span>
+<span class="fc" id="L90">        return copy;</span>
+    }
+
+    @Override
+    public String getText() throws JMSException {
+<span class="fc" id="L95">        Section body = getAmqpMessage().getBody();</span>
+
+<span class="fc bfc" id="L97" title="All 2 branches covered.">        if (body == null) {</span>
+<span class="fc" id="L98">            return null;</span>
+<span class="fc bfc" id="L99" title="All 2 branches covered.">        } else if (body instanceof Data) {</span>
+<span class="fc" id="L100">            Data data = (Data) body;</span>
+<span class="fc bfc" id="L101" title="All 4 branches covered.">            if (data.getValue() == null || data.getValue().getLength() == 0) {</span>
+<span class="fc" id="L102">                return &quot;&quot;;</span>
+            } else {
+<span class="fc" id="L104">                Binary b = data.getValue();</span>
+<span class="fc" id="L105">                ByteBuffer buf = ByteBuffer.wrap(b.getArray(), b.getArrayOffset(), b.getLength());</span>
+
+                try {
+<span class="fc" id="L108">                    CharBuffer chars = charset.newDecoder().decode(buf);</span>
+<span class="fc" id="L109">                    return String.valueOf(chars);</span>
+<span class="fc" id="L110">                } catch (CharacterCodingException e) {</span>
+<span class="fc" id="L111">                    throw JmsExceptionSupport.create(&quot;Cannot decode String in &quot; + charset.displayName(), e);</span>
+                }
+            }
+<span class="fc bfc" id="L114" title="All 2 branches covered.">        } else if (body instanceof AmqpValue) {</span>
+<span class="fc" id="L115">            Object value = ((AmqpValue) body).getValue();</span>
+
+<span class="fc bfc" id="L117" title="All 4 branches covered.">            if (value == null || value instanceof String) {</span>
+<span class="fc" id="L118">                return (String) value;</span>
+            } else {
+<span class="fc" id="L120">                throw new IllegalStateException(&quot;Unexpected amqp-value body content type: &quot; + value.getClass().getSimpleName());</span>
+            }
+        } else {
+<span class="fc" id="L123">            throw new IllegalStateException(&quot;Unexpected message body type: &quot; + body.getClass().getSimpleName());</span>
+        }
+    }
+
+    @Override
+    public void setText(String value) {
+<span class="fc" id="L129">        AmqpValue body = new AmqpValue(value);</span>
+<span class="fc" id="L130">        getAmqpMessage().setBody(body);</span>
+<span class="fc" id="L131">    }</span>
+
+    @Override
+    public void clearBody() {
+<span class="fc" id="L135">        setText(null);</span>
+<span class="fc" id="L136">    }</span>
+
+    Charset getCharset() {
+<span class="fc" id="L139">        return charset;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

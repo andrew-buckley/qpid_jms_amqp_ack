@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AbstractMessageQueue.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.util</a> &gt; <span class="el_source">AbstractMessageQueue.java</span></div><h1>AbstractMessageQueue.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.util;
+
+import org.apache.qpid.jms.message.JmsInboundMessageDispatch;
+
+/**
+ * Abstract Message Queue class used to implement the common functions of a Message Queue
+ * instance.
+ */
+<span class="fc" id="L25">public abstract class AbstractMessageQueue implements MessageQueue {</span>
+
+    protected boolean closed;
+    protected boolean running;
+<span class="fc" id="L29">    protected Object lock = new Object();</span>
+
+    @Override
+    public JmsInboundMessageDispatch peek() {
+<span class="fc" id="L33">        synchronized (lock) {</span>
+<span class="fc" id="L34">            return peekFirst();</span>
+<span class="nc" id="L35">        }</span>
+    }
+
+    @Override
+    public JmsInboundMessageDispatch dequeue(long timeout) throws InterruptedException {
+<span class="fc" id="L40">        synchronized (lock) {</span>
+            // Wait until the consumer is ready to deliver messages.
+<span class="fc bfc" id="L42" title="All 8 branches covered.">            while (timeout != 0 &amp;&amp; !closed &amp;&amp; (isEmpty() || !running)) {</span>
+<span class="fc bfc" id="L43" title="All 2 branches covered.">                if (timeout == -1) {</span>
+<span class="fc" id="L44">                    lock.wait();</span>
+                } else {
+<span class="fc" id="L46">                    lock.wait(timeout);</span>
+<span class="fc" id="L47">                    break;</span>
+                }
+            }
+
+<span class="fc bfc" id="L51" title="All 6 branches covered.">            if (closed || !running || isEmpty()) {</span>
+<span class="fc" id="L52">                return null;</span>
+            }
+
+<span class="fc" id="L55">            return removeFirst();</span>
+<span class="nc" id="L56">        }</span>
+    }
+
+    @Override
+    public JmsInboundMessageDispatch dequeueNoWait() {
+<span class="fc" id="L61">        synchronized (lock) {</span>
+<span class="fc bfc" id="L62" title="All 6 branches covered.">            if (closed || !running || isEmpty()) {</span>
+<span class="fc" id="L63">                return null;</span>
+            }
+<span class="fc" id="L65">            return removeFirst();</span>
+<span class="nc" id="L66">        }</span>
+    }
+
+    @Override
+    public void start() {
+<span class="fc" id="L71">        synchronized (lock) {</span>
+<span class="fc" id="L72">            running = true;</span>
+<span class="fc" id="L73">            lock.notifyAll();</span>
+<span class="pc" id="L74">        }</span>
+<span class="fc" id="L75">    }</span>
+
+    @Override
+    public void stop() {
+<span class="fc" id="L79">        synchronized (lock) {</span>
+<span class="fc" id="L80">            running = false;</span>
+<span class="fc" id="L81">            lock.notifyAll();</span>
+<span class="pc" id="L82">        }</span>
+<span class="fc" id="L83">    }</span>
+
+    @Override
+    public boolean isRunning() {
+<span class="fc" id="L87">        return running;</span>
+    }
+
+    @Override
+    public void close() {
+<span class="fc" id="L92">        synchronized (lock) {</span>
+<span class="fc bfc" id="L93" title="All 2 branches covered.">            if (!closed) {</span>
+<span class="fc" id="L94">                running = false;</span>
+<span class="fc" id="L95">                closed = true;</span>
+            }
+<span class="fc" id="L97">            lock.notifyAll();</span>
+<span class="pc" id="L98">        }</span>
+<span class="fc" id="L99">    }</span>
+
+    @Override
+    public boolean isClosed() {
+<span class="fc" id="L103">        return closed;</span>
+    }
+
+    @Override
+    public Object getLock() {
+<span class="fc" id="L108">        return lock;</span>
+    }
+
+    /**
+     * Removes and returns the first entry in the implementation queue.  This method
+     * is always called under lock and does not need to protect itself or check running
+     * state etc.
+     *
+     * @return the first message queued in the implemented queue.
+     */
+    protected abstract JmsInboundMessageDispatch removeFirst();
+
+    /**
+     * Returns but does not remove the first entry in the implementation queue.  This method
+     * is always called under lock and does not need to protect itself or check running
+     * state etc.
+     *
+     * @return the first message queued in the implemented queue.
+     */
+    protected abstract JmsInboundMessageDispatch peekFirst();
+
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

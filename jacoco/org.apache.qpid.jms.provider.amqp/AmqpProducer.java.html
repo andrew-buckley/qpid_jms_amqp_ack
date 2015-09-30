@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpProducer.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp</a> &gt; <span class="el_source">AmqpProducer.java</span></div><h1>AmqpProducer.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp;
+
+import java.io.IOException;
+
+import javax.jms.JMSException;
+
+import org.apache.qpid.jms.message.JmsOutboundMessageDispatch;
+import org.apache.qpid.jms.meta.JmsProducerId;
+import org.apache.qpid.jms.meta.JmsProducerInfo;
+import org.apache.qpid.jms.provider.AsyncResult;
+import org.apache.qpid.proton.engine.Sender;
+
+/**
+ * Base class for Producer instances.
+ */
+public abstract class AmqpProducer extends AmqpAbstractResource&lt;JmsProducerInfo, Sender&gt; {
+
+    protected final AmqpSession session;
+    protected final AmqpConnection connection;
+    protected boolean presettle;
+
+    public AmqpProducer(AmqpSession session, JmsProducerInfo info) {
+<span class="fc" id="L39">        super(info);</span>
+<span class="fc" id="L40">        this.session = session;</span>
+<span class="fc" id="L41">        this.connection = session.getConnection();</span>
+
+        // Add a shortcut back to this Producer for quicker lookup.
+<span class="fc" id="L44">        this.resource.getProducerId().setProviderHint(this);</span>
+<span class="fc" id="L45">    }</span>
+
+    /**
+     * Sends the given message
+     *
+     * @param envelope
+     *        The envelope that contains the message and it's targeted destination.
+     * @param request
+     *        The AsyncRequest that will be notified on send success or failure.
+     *
+     * @return true if the producer had credit to send or false if there was no available
+     *         credit and the send needed to be deferred.
+     *
+     * @throws IOException if an error occurs sending the message
+     * @throws JMSException if an error occurs while preparing the message for send.
+     */
+    public abstract boolean send(JmsOutboundMessageDispatch envelope, AsyncResult request) throws IOException, JMSException;
+
+    /**
+     * @return true if this is an anonymous producer or false if fixed to a given destination.
+     */
+    public abstract boolean isAnonymous();
+
+    /**
+     * @return the JmsProducerId that was assigned to this AmqpProducer.
+     */
+    public JmsProducerId getProducerId() {
+<span class="fc" id="L72">        return this.resource.getProducerId();</span>
+    }
+
+    /**
+     * @return true if the producer should presettle all sent messages.
+     */
+    public boolean isPresettle() {
+<span class="fc" id="L79">        return presettle;</span>
+    }
+
+    /**
+     * Sets whether the producer will presettle all messages that it sends.  Sending
+     * presettled reduces the time it takes to send a message but increases the change
+     * of message loss should the connection drop during send.
+     *
+     * @param presettle
+     *        true if all messages are sent settled.
+     */
+    public void setPresettle(boolean presettle) {
+<span class="fc" id="L91">        this.presettle = presettle;</span>
+<span class="fc" id="L92">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

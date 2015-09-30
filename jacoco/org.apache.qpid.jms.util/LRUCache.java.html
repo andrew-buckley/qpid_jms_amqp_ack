@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>LRUCache.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.util</a> &gt; <span class="el_source">LRUCache.java</span></div><h1>LRUCache.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.util;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * A Simple LRU Cache based on a LinkedHashMap.
+ *
+ * @param &lt;K&gt;
+ * @param &lt;V&gt;
+ */
+public class LRUCache&lt;K, V&gt; extends LinkedHashMap&lt;K, V&gt; {
+
+    private static final long serialVersionUID = -342098639681884413L;
+<span class="fc" id="L31">    protected int maxCacheSize = 10000;</span>
+
+    /**
+     * Default constructor for an LRU Cache The default capacity is 10000
+     */
+    public LRUCache() {
+<span class="fc" id="L37">        this(0,10000, 0.75f, true);</span>
+<span class="fc" id="L38">    }</span>
+
+    /**
+     * Constructs a LRUCache with a maximum capacity
+     *
+     * @param maximumCacheSize
+     */
+    public LRUCache(int maximumCacheSize) {
+<span class="fc" id="L46">        this(0, maximumCacheSize, 0.75f, true);</span>
+<span class="fc" id="L47">    }</span>
+
+    /**
+     * Constructs an empty &lt;tt&gt;LRUCache&lt;/tt&gt; instance with the specified
+     * initial capacity, maximumCacheSize,load factor and ordering mode.
+     *
+     * @param initialCapacity the initial capacity.
+     * @param maximumCacheSize
+     * @param loadFactor the load factor.
+     * @param accessOrder the ordering mode - &lt;tt&gt;true&lt;/tt&gt; for access-order,
+     *                &lt;tt&gt;false&lt;/tt&gt; for insertion-order.
+     *
+     * @throws IllegalArgumentException if the initial capacity is negative or
+     *                 the load factor is non-positive.
+     */
+    public LRUCache(int initialCapacity, int maximumCacheSize, float loadFactor, boolean accessOrder) {
+<span class="fc" id="L63">        super(initialCapacity, loadFactor, accessOrder);</span>
+<span class="fc" id="L64">        this.maxCacheSize = maximumCacheSize;</span>
+<span class="fc" id="L65">    }</span>
+
+    /**
+     * @return Returns the maxCacheSize.
+     */
+    public int getMaxCacheSize() {
+<span class="fc" id="L71">        return maxCacheSize;</span>
+    }
+
+    /**
+     * @param maxCacheSize The maxCacheSize to set.
+     */
+    public void setMaxCacheSize(int maxCacheSize) {
+<span class="fc" id="L78">        this.maxCacheSize = maxCacheSize;</span>
+<span class="fc" id="L79">    }</span>
+
+    @Override
+    protected boolean removeEldestEntry(Map.Entry&lt;K,V&gt; eldest) {
+<span class="fc bfc" id="L83" title="All 2 branches covered.">        if( size() &gt; maxCacheSize ) {</span>
+<span class="fc" id="L84">            onCacheEviction(eldest);</span>
+<span class="fc" id="L85">            return true;</span>
+        }
+<span class="fc" id="L87">        return false;</span>
+    }
+
+    /**
+     * Event point used by subclasses to perform some cleanup action when an
+     * element is evicted from the cache.
+     *
+     * @param eldest
+     *        the item being evicted from the LRUCache.
+     */
+    protected void onCacheEviction(Map.Entry&lt;K,V&gt; eldest) {
+<span class="fc" id="L98">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

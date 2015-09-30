@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpTypedObjectDelegate.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp.message</a> &gt; <span class="el_source">AmqpTypedObjectDelegate.java</span></div><h1>AmqpTypedObjectDelegate.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp.message;
+
+import java.io.IOException;
+import java.io.Serializable;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.qpid.proton.amqp.messaging.AmqpSequence;
+import org.apache.qpid.proton.amqp.messaging.AmqpValue;
+import org.apache.qpid.proton.amqp.messaging.Data;
+import org.apache.qpid.proton.amqp.messaging.Section;
+import org.apache.qpid.proton.message.Message;
+
+/**
+ * Wrapper around an AMQP Message instance that will be treated as a JMS ObjectMessage
+ * type.
+ */
+public class AmqpTypedObjectDelegate implements AmqpObjectTypeDelegate {
+
+<span class="fc" id="L36">    static final AmqpValue NULL_OBJECT_BODY = new AmqpValue(null);</span>
+
+    private final Message message;
+
+    /**
+     * Create a new delegate that uses Java serialization to store the message content.
+     *
+     * @param message
+     *        the AMQP message instance where the object is to be stored / read.
+     */
+<span class="fc" id="L46">    public AmqpTypedObjectDelegate(Message message) {</span>
+<span class="fc" id="L47">        this.message = message;</span>
+<span class="fc" id="L48">        this.message.setContentType(null);</span>
+<span class="fc" id="L49">    }</span>
+
+    @Override
+    public Serializable getObject() throws IOException, ClassNotFoundException {
+        // TODO: this should actually return a snapshot of the object, so we
+        // need to save the bytes so we can return an equal/unmodified object later
+
+<span class="fc" id="L56">        Section body = message.getBody();</span>
+<span class="fc bfc" id="L57" title="All 2 branches covered.">        if (body == null) {</span>
+<span class="fc" id="L58">            return null;</span>
+<span class="pc bpc" id="L59" title="1 of 2 branches missed.">        } else if (body instanceof AmqpValue) {</span>
+            // TODO: This is assuming the object can be immediately returned, and is
+            //       deeply Serializable. We will actually have to ensure elements are
+            //       Serializable and e.g convert the Uint/Ubyte etc wrappers.
+<span class="fc" id="L63">            return (Serializable) ((AmqpValue) body).getValue();</span>
+<span class="nc bnc" id="L64" title="All 2 branches missed.">        } else if (body instanceof Data) {</span>
+            // TODO: return as byte[]? ByteBuffer?
+<span class="nc" id="L66">            throw new UnsupportedOperationException(&quot;Data support still to be added&quot;);</span>
+<span class="nc bnc" id="L67" title="All 2 branches missed.">        } else if (body instanceof AmqpSequence) {</span>
+            // TODO: This is assuming the object can be immediately returned, and is
+            //       deeply Serializable. We will actually have to ensure elements are
+            //       Serializable and e.g convert the Uint/Ubyte etc wrappers.
+<span class="nc" id="L71">            return (Serializable) ((AmqpSequence) body).getValue();</span>
+        } else {
+<span class="nc" id="L73">            throw new IllegalStateException(&quot;Unexpected body type: &quot; + body.getClass().getSimpleName());</span>
+        }
+    }
+
+    @Override
+    public void setObject(Serializable value) throws IOException {
+<span class="fc bfc" id="L79" title="All 2 branches covered.">        if (value == null) {</span>
+<span class="fc" id="L80">            message.setBody(NULL_OBJECT_BODY);</span>
+<span class="pc bpc" id="L81" title="1 of 2 branches missed.">        } else if (isSupportedAmqpValueObjectType(value)) {</span>
+            // TODO: This is a temporary hack, we actually need to take a snapshot of the object
+            // at this point in time, not simply set the object itself into the Proton message.
+            // We will need to encode it now, first to save the snapshot to send, and also to
+            // verify up front that we can actually send it later.
+
+            // Even if we do that we would currently then need to decode it later to set the
+            // body to send, unless we augment Proton to allow setting the bytes directly.
+            // We will always need to decode bytes to return a snapshot from getObject(). We
+            // will need to save the bytes somehow to support that on received messages.
+<span class="fc" id="L91">            message.setBody(new AmqpValue(value));</span>
+        } else {
+            // TODO: Data and AmqpSequence?
+<span class="nc" id="L94">            throw new IllegalArgumentException(&quot;Encoding this object type with the AMQP type system is not supported: &quot; + value.getClass().getName());</span>
+        }
+<span class="fc" id="L96">    }</span>
+
+    @Override
+    public void onSend() {
+<span class="fc" id="L100">        message.setContentType(null);</span>
+<span class="fc bfc" id="L101" title="All 2 branches covered.">        if (message.getBody() == null) {</span>
+<span class="fc" id="L102">            message.setBody(NULL_OBJECT_BODY);</span>
+        }
+<span class="fc" id="L104">    }</span>
+
+    private boolean isSupportedAmqpValueObjectType(Serializable serializable) {
+        // TODO: augment supported types to encode as an AmqpValue?
+<span class="pc bpc" id="L108" title="5 of 8 branches missed.">        return serializable instanceof String ||</span>
+               serializable instanceof Map&lt;?,?&gt; ||
+               serializable instanceof List&lt;?&gt; ||
+               serializable.getClass().isArray();
+    }
+
+    @Override
+    public boolean isAmqpTypeEncoded() {
+<span class="fc" id="L116">        return true;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

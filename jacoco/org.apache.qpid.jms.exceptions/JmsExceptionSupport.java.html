@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>JmsExceptionSupport.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.exceptions</a> &gt; <span class="el_source">JmsExceptionSupport.java</span></div><h1>JmsExceptionSupport.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.exceptions;
+
+import javax.jms.JMSException;
+import javax.jms.MessageEOFException;
+import javax.jms.MessageFormatException;
+
+/**
+ * Exception support class.
+ *
+ * Factory class for creating JMSException instances based on String messages or by
+ * wrapping other non-JMS exception.
+ *
+ * @since 1.0
+ */
+public final class JmsExceptionSupport {
+
+<span class="nc" id="L33">    private JmsExceptionSupport() {}</span>
+
+    /**
+     * Creates or passes through a JMSException to be thrown to the client.
+     *
+     * In the event that the exception passed to this method is already a
+     * JMSException it is passed through unmodified, otherwise a new JMSException
+     * is created with the given message and the cause is set to the given
+     * cause Throwable instance.
+     *
+     * @param message
+     *        The message value to set when a new JMSException is created.
+     * @param cause
+     *        The exception that caused this error state.
+     *
+     * @return a JMSException instance.
+     */
+    public static JMSException create(String message, Throwable cause) {
+<span class="fc bfc" id="L51" title="All 2 branches covered.">        if (cause instanceof JMSException) {</span>
+<span class="fc" id="L52">            return (JMSException) cause;</span>
+        }
+
+<span class="fc bfc" id="L55" title="All 2 branches covered.">        if (cause.getCause() instanceof JMSException) {</span>
+<span class="fc" id="L56">            return (JMSException) cause.getCause();</span>
+        }
+
+<span class="pc bpc" id="L59" title="1 of 4 branches missed.">        if (message == null || message.isEmpty()) {</span>
+<span class="fc" id="L60">            message = cause.getMessage();</span>
+<span class="pc bpc" id="L61" title="1 of 4 branches missed.">            if (message == null || message.isEmpty()) {</span>
+<span class="fc" id="L62">                message = cause.toString();</span>
+            }
+        }
+
+<span class="fc" id="L66">        JMSException exception = new JMSException(message);</span>
+<span class="pc bpc" id="L67" title="1 of 2 branches missed.">        if (cause instanceof Exception) {</span>
+<span class="fc" id="L68">            exception.setLinkedException((Exception) cause);</span>
+        }
+<span class="fc" id="L70">        exception.initCause(cause);</span>
+<span class="fc" id="L71">        return exception;</span>
+    }
+
+    /**
+     * Creates or passes through a JMSException to be thrown to the client.
+     *
+     * In the event that the exception passed to this method is already a
+     * JMSException it is passed through unmodified, otherwise a new JMSException
+     * is created using the error message taken from the given Throwable value
+     * and the cause value is set to the given Throwable instance.
+     *
+     * @param cause
+     *        The exception that caused this error state.
+     *
+     * @return a JMSException instance.
+     */
+    public static JMSException create(Throwable cause) {
+<span class="fc" id="L88">        return create(null, cause);</span>
+    }
+
+    /**
+     * Creates or passes through a MessageEOFException to be thrown to the client.
+     *
+     * In the event that the exception passed to this method is already a
+     * MessageEOFException it is passed through unmodified, otherwise a new
+     * MessageEOFException is created using the error message taken from the
+     * given Throwable value and the cause value is set to the given Throwable
+     * instance.
+     *
+     * @param cause
+     *        The exception that caused this error state.
+     *
+     * @return a MessageEOFException instance.
+     */
+    public static MessageEOFException createMessageEOFException(Throwable cause) {
+<span class="fc" id="L106">        String message = cause.getMessage();</span>
+<span class="pc bpc" id="L107" title="3 of 4 branches missed.">        if (message == null || message.length() == 0) {</span>
+<span class="fc" id="L108">            message = cause.toString();</span>
+        }
+
+<span class="fc" id="L111">        MessageEOFException exception = new MessageEOFException(message);</span>
+<span class="pc bpc" id="L112" title="1 of 2 branches missed.">        if (cause instanceof Exception) {</span>
+<span class="fc" id="L113">            exception.setLinkedException((Exception) cause);</span>
+        }
+<span class="fc" id="L115">        exception.initCause(cause);</span>
+<span class="fc" id="L116">        return exception;</span>
+    }
+
+    /**
+     * Creates or passes through a MessageFormatException to be thrown to the client.
+     *
+     * In the event that the exception passed to this method is already a
+     * MessageFormatException it is passed through unmodified, otherwise a new
+     * MessageFormatException is created using the error message taken from the
+     * given Throwable value and the cause value is set to the given Throwable
+     * instance.
+     *
+     * @param cause
+     *        The exception that caused this error state.
+     *
+     * @return a MessageEOFException instance.
+     */
+    public static MessageFormatException createMessageFormatException(Throwable cause) {
+<span class="fc" id="L134">        String message = cause.getMessage();</span>
+<span class="pc bpc" id="L135" title="3 of 4 branches missed.">        if (message == null || message.length() == 0) {</span>
+<span class="fc" id="L136">            message = cause.toString();</span>
+        }
+
+<span class="fc" id="L139">        MessageFormatException exception = new MessageFormatException(message);</span>
+<span class="pc bpc" id="L140" title="1 of 2 branches missed.">        if (cause instanceof Exception) {</span>
+<span class="fc" id="L141">            exception.setLinkedException((Exception) cause);</span>
+        }
+<span class="fc" id="L143">        exception.initCause(cause);</span>
+<span class="fc" id="L144">        return exception;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

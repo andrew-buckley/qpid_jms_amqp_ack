@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>JmsQueueBrowser.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms</a> &gt; <span class="el_source">JmsQueueBrowser.java</span></div><h1>JmsQueueBrowser.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms;
+
+import java.util.Enumeration;
+import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+import javax.jms.IllegalStateException;
+import javax.jms.JMSException;
+import javax.jms.Message;
+import javax.jms.Queue;
+import javax.jms.QueueBrowser;
+
+import org.apache.qpid.jms.message.JmsInboundMessageDispatch;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * A client uses a &lt;CODE&gt;QueueBrowser&lt;/CODE&gt; object to look at messages on a queue without
+ * removing them.
+ * &lt;p&gt;
+ * &lt;p&gt;
+ * The &lt;CODE&gt;getEnumeration&lt;/CODE&gt; method returns a &lt;CODE&gt;
+ * java.util.Enumeration&lt;/CODE&gt; that is used to scan the queue's messages. It may be an
+ * enumeration of the entire content of a queue, or it may contain only the messages matching a
+ * message selector.
+ * &lt;p&gt;
+ * &lt;p&gt;
+ * Messages may be arriving and expiring while the scan is done. The JMS API does not require
+ * the content of an enumeration to be a static snapshot of queue content. Whether these changes
+ * are visible or not depends on the JMS provider.
+ * &lt;p&gt;
+ * &lt;p&gt;
+ * A &lt;CODE&gt;QueueBrowser&lt;/CODE&gt; can be created from either a &lt;CODE&gt;Session
+ * &lt;/CODE&gt; or a &lt;CODE&gt;QueueSession&lt;/CODE&gt;.
+ *
+ * @see javax.jms.Session#createBrowser
+ * @see javax.jms.QueueSession#createBrowser
+ * @see javax.jms.QueueBrowser
+ * @see javax.jms.QueueReceiver
+ */
+public class JmsQueueBrowser implements QueueBrowser, Enumeration&lt;Message&gt; {
+
+<span class="fc" id="L59">    protected static final Logger LOG = LoggerFactory.getLogger(JmsQueueBrowser.class);</span>
+
+    private final JmsSession session;
+    private final JmsDestination destination;
+    private final String selector;
+
+    private JmsMessageConsumer consumer;
+<span class="fc" id="L66">    private final AtomicBoolean browseDone = new AtomicBoolean(false);</span>
+
+    private Message next;
+<span class="fc" id="L69">    private final AtomicBoolean closed = new AtomicBoolean();</span>
+<span class="fc" id="L70">    private final Object semaphore = new Object();</span>
+
+    /**
+     * Constructor for an JmsQueueBrowser - used internally
+     *
+     * @param session
+     * @param destination
+     * @param selector
+     * @throws javax.jms.JMSException
+     */
+<span class="fc" id="L80">    protected JmsQueueBrowser(JmsSession session, JmsDestination destination, String selector) throws JMSException {</span>
+<span class="fc" id="L81">        this.session = session;</span>
+<span class="fc" id="L82">        this.destination = destination;</span>
+<span class="fc" id="L83">        this.selector = selector;</span>
+<span class="fc" id="L84">    }</span>
+
+    private void destroyConsumer() {
+<span class="pc bpc" id="L87" title="1 of 2 branches missed.">        if (consumer == null) {</span>
+<span class="fc" id="L88">            return;</span>
+        }
+        try {
+<span class="nc" id="L91">            consumer.close();</span>
+<span class="nc" id="L92">            consumer = null;</span>
+<span class="nc" id="L93">        } catch (JMSException e) {</span>
+<span class="nc" id="L94">            e.printStackTrace();</span>
+<span class="nc" id="L95">        }</span>
+<span class="nc" id="L96">    }</span>
+
+    /**
+     * Gets an enumeration for browsing the current queue messages in the order they would be
+     * received.
+     *
+     * @return an enumeration for browsing the messages
+     * @throws javax.jms.JMSException
+     *         if the JMS provider fails to get the enumeration for this browser due to some
+     *         internal error.
+     */
+    @Override
+    public Enumeration&lt;Message&gt; getEnumeration() throws JMSException {
+<span class="nc" id="L109">        checkClosed();</span>
+<span class="nc bnc" id="L110" title="All 2 branches missed.">        if (consumer == null) {</span>
+<span class="nc" id="L111">            consumer = createConsumer();</span>
+        }
+<span class="nc" id="L113">        return this;</span>
+    }
+
+    private void checkClosed() throws IllegalStateException {
+<span class="nc bnc" id="L117" title="All 2 branches missed.">        if (closed.get()) {</span>
+<span class="nc" id="L118">            throw new IllegalStateException(&quot;The Consumer is closed&quot;);</span>
+        }
+<span class="nc" id="L120">    }</span>
+
+    /**
+     * @return true if more messages to process
+     */
+    @Override
+    public boolean hasMoreElements() {
+        while (true) {
+<span class="nc" id="L128">            synchronized (this) {</span>
+<span class="nc bnc" id="L129" title="All 2 branches missed.">                if (consumer == null) {</span>
+<span class="nc" id="L130">                    return false;</span>
+                }
+<span class="nc" id="L132">            }</span>
+
+<span class="nc bnc" id="L134" title="All 2 branches missed.">            if (next == null) {</span>
+                try {
+<span class="nc" id="L136">                    next = consumer.receiveNoWait();</span>
+<span class="nc" id="L137">                } catch (JMSException e) {</span>
+<span class="nc" id="L138">                    LOG.warn(&quot;Error while receive the next message: {}&quot;, e.getMessage());</span>
+<span class="nc" id="L139">                }</span>
+
+<span class="nc bnc" id="L141" title="All 2 branches missed.">                if (next != null) {</span>
+<span class="nc" id="L142">                    return true;</span>
+                }
+            } else {
+<span class="nc" id="L145">                return true;</span>
+            }
+
+<span class="nc bnc" id="L148" title="All 4 branches missed.">            if (browseDone.get() || !session.isStarted()) {</span>
+<span class="nc" id="L149">                destroyConsumer();</span>
+<span class="nc" id="L150">                return false;</span>
+            }
+
+<span class="nc" id="L153">            waitForMessage();</span>
+        }
+    }
+
+    /**
+     * @return the next message if one exists
+     *
+     * @throws NoSuchElementException if no more elements are available.
+     */
+    @Override
+    public Message nextElement() {
+<span class="nc" id="L164">        synchronized (this) {</span>
+<span class="nc bnc" id="L165" title="All 2 branches missed.">            if (consumer == null) {</span>
+<span class="nc" id="L166">                return null;</span>
+            }
+<span class="nc" id="L168">        }</span>
+
+<span class="nc bnc" id="L170" title="All 2 branches missed.">        if (hasMoreElements()) {</span>
+<span class="nc" id="L171">            Message message = next;</span>
+<span class="nc" id="L172">            next = null;</span>
+<span class="nc" id="L173">            return message;</span>
+        }
+
+<span class="nc bnc" id="L176" title="All 4 branches missed.">        if (browseDone.get() || !session.isStarted()) {</span>
+<span class="nc" id="L177">            destroyConsumer();</span>
+<span class="nc" id="L178">            return null;</span>
+        }
+
+<span class="nc" id="L181">        throw new NoSuchElementException();</span>
+    }
+
+    @Override
+    public void close() throws JMSException {
+<span class="fc bfc" id="L186" title="All 2 branches covered.">        if (closed.compareAndSet(false, true)) {</span>
+<span class="fc" id="L187">            browseDone.set(true);</span>
+<span class="fc" id="L188">            destroyConsumer();</span>
+        }
+<span class="fc" id="L190">    }</span>
+
+    /**
+     * Gets the queue associated with this queue browser.
+     *
+     * @return the queue
+     * @throws javax.jms.JMSException
+     *         if the JMS provider fails to get the queue associated with this browser due to
+     *         some internal error.
+     */
+
+    @Override
+    public Queue getQueue() throws JMSException {
+<span class="fc" id="L203">        return (Queue) destination;</span>
+    }
+
+    @Override
+    public String getMessageSelector() throws JMSException {
+<span class="fc" id="L208">        return selector;</span>
+    }
+
+    /**
+     * Wait on a semaphore for a fixed amount of time for a message to come in.
+     */
+    protected void waitForMessage() {
+        try {
+<span class="nc" id="L216">            synchronized (semaphore) {</span>
+<span class="nc" id="L217">                semaphore.wait(2000);</span>
+<span class="nc" id="L218">            }</span>
+<span class="nc" id="L219">        } catch (InterruptedException e) {</span>
+<span class="nc" id="L220">            Thread.currentThread().interrupt();</span>
+<span class="nc" id="L221">        }</span>
+<span class="nc" id="L222">    }</span>
+
+    protected void notifyMessageAvailable() {
+<span class="nc" id="L225">        synchronized (semaphore) {</span>
+<span class="nc" id="L226">            semaphore.notifyAll();</span>
+<span class="nc" id="L227">        }</span>
+<span class="nc" id="L228">    }</span>
+
+    @Override
+    public String toString() {
+<span class="nc" id="L232">        JmsMessageConsumer consumer = this.consumer;</span>
+<span class="nc bnc" id="L233" title="All 2 branches missed.">        return &quot;JmsQueueBrowser { value=&quot; + (consumer != null ? consumer.getConsumerId() : &quot;null&quot;) + &quot; }&quot;;</span>
+    }
+
+    private JmsMessageConsumer createConsumer() throws JMSException {
+<span class="nc" id="L237">        browseDone.set(false);</span>
+<span class="nc" id="L238">        JmsMessageConsumer rc = new JmsMessageConsumer(session.getNextConsumerId(), session, destination, selector, false) {</span>
+
+            @Override
+            public boolean isBrowser() {
+<span class="nc" id="L242">                return true;</span>
+            }
+
+            @Override
+            public void onInboundMessage(JmsInboundMessageDispatch envelope) {
+<span class="nc bnc" id="L247" title="All 2 branches missed.">                if (envelope.getMessage() == null) {</span>
+<span class="nc" id="L248">                    browseDone.set(true);</span>
+                } else {
+<span class="nc" id="L250">                    super.onInboundMessage(envelope);</span>
+                }
+<span class="nc" id="L252">                notifyMessageAvailable();</span>
+<span class="nc" id="L253">            }</span>
+        };
+<span class="nc" id="L255">        rc.init();</span>
+<span class="nc" id="L256">        return rc;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

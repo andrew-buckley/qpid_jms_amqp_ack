@@ -1,0 +1,588 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>PropertyUtil.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.util</a> &gt; <span class="el_source">PropertyUtil.java</span></div><h1>PropertyUtil.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.util;
+
+import java.beans.BeanInfo;
+import java.beans.Introspector;
+import java.beans.PropertyDescriptor;
+import java.io.UnsupportedEncodingException;
+import java.lang.reflect.Method;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Properties;
+
+import javax.net.ssl.SSLContext;
+
+/**
+ * Utilities for properties
+ */
+<span class="fc" id="L42">public class PropertyUtil {</span>
+
+    /**
+     * Creates a URI from the original URI and the given parameters.
+     *
+     * @param originalURI
+     *        The URI whose current parameters are removed and replaced with the given remainder value.
+     * @param params
+     *        The URI params that should be used to replace the current ones in the target.
+     *
+     * @return a new URI that matches the original one but has its query options replaced with
+     *         the given ones.
+     *
+     * @throws URISyntaxException
+     */
+    public static URI replaceQuery(URI originalURI, Map&lt;String, String&gt; params) throws URISyntaxException {
+<span class="fc" id="L58">        String s = createQueryString(params);</span>
+<span class="fc bfc" id="L59" title="All 2 branches covered.">        if (s.length() == 0) {</span>
+<span class="fc" id="L60">            s = null;</span>
+        }
+<span class="fc" id="L62">        return replaceQuery(originalURI, s);</span>
+    }
+
+    /**
+     * Creates a URI with the given query, removing an previous query value from the given URI.
+     *
+     * @param uri
+     *        The source URI whose existing query is replaced with the newly supplied one.
+     * @param query
+     *        The new URI query string that should be appended to the given URI.
+     *
+     * @return a new URI that is a combination of the original URI and the given query string.
+     * @throws URISyntaxException
+     */
+    public static URI replaceQuery(URI uri, String query) throws URISyntaxException {
+<span class="fc" id="L77">        String schemeSpecificPart = uri.getRawSchemeSpecificPart();</span>
+        // strip existing query if any
+<span class="fc" id="L79">        int questionMark = schemeSpecificPart.lastIndexOf(&quot;?&quot;);</span>
+        // make sure question mark is not within parentheses
+<span class="fc bfc" id="L81" title="All 2 branches covered.">        if (questionMark &lt; schemeSpecificPart.lastIndexOf(&quot;)&quot;)) {</span>
+<span class="fc" id="L82">            questionMark = -1;</span>
+        }
+<span class="fc bfc" id="L84" title="All 2 branches covered.">        if (questionMark &gt; 0) {</span>
+<span class="fc" id="L85">            schemeSpecificPart = schemeSpecificPart.substring(0, questionMark);</span>
+        }
+<span class="fc bfc" id="L87" title="All 4 branches covered.">        if (query != null &amp;&amp; query.length() &gt; 0) {</span>
+<span class="fc" id="L88">            schemeSpecificPart += &quot;?&quot; + query;</span>
+        }
+<span class="fc" id="L90">        return new URI(uri.getScheme(), schemeSpecificPart, uri.getFragment());</span>
+    }
+
+    /**
+     * Creates a URI with the given query, removing an previous query value from the given URI.
+     *
+     * @param uri
+     *        The source URI whose existing query is replaced with the newly supplied one.
+     *
+     * @return a new URI that is a combination of the original URI and the given query string.
+     * @throws URISyntaxException
+     */
+    public static URI eraseQuery(URI uri) throws URISyntaxException {
+<span class="fc" id="L103">        return replaceQuery(uri, (String) null);</span>
+    }
+
+    /**
+     * Given a key / value mapping, create and return a URI formatted query string that is valid
+     * and can be appended to a URI.
+     *
+     * @param options
+     *        The Mapping that will create the new Query string.
+     *
+     * @return a URI formatted query string.
+     *
+     * @throws URISyntaxException
+     */
+    public static String createQueryString(Map&lt;String, ? extends Object&gt; options) throws URISyntaxException {
+        try {
+<span class="fc bfc" id="L119" title="All 2 branches covered.">            if (options.size() &gt; 0) {</span>
+<span class="fc" id="L120">                StringBuffer rc = new StringBuffer();</span>
+<span class="fc" id="L121">                boolean first = true;</span>
+<span class="fc bfc" id="L122" title="All 2 branches covered.">                for (Entry&lt;String, ? extends Object&gt; entry : options.entrySet()) {</span>
+<span class="fc bfc" id="L123" title="All 2 branches covered.">                    if (first) {</span>
+<span class="fc" id="L124">                        first = false;</span>
+                    } else {
+<span class="fc" id="L126">                        rc.append(&quot;&amp;&quot;);</span>
+                    }
+<span class="fc" id="L128">                    rc.append(URLEncoder.encode(entry.getKey(), &quot;UTF-8&quot;));</span>
+<span class="fc" id="L129">                    rc.append(&quot;=&quot;);</span>
+<span class="fc" id="L130">                    rc.append(URLEncoder.encode((String) entry.getValue(), &quot;UTF-8&quot;));</span>
+<span class="fc" id="L131">                }</span>
+<span class="fc" id="L132">                return rc.toString();</span>
+            } else {
+<span class="fc" id="L134">                return &quot;&quot;;</span>
+            }
+<span class="nc" id="L136">        } catch (UnsupportedEncodingException e) {</span>
+<span class="nc" id="L137">            throw (URISyntaxException) new URISyntaxException(e.toString(), &quot;Invalid encoding&quot;).initCause(e);</span>
+        }
+    }
+
+    /**
+     * Get properties from a URI and return them in a new {@code Map&lt;String, String&gt;} instance.
+     *
+     * If the URI is null or the query string of the URI is null an empty Map is returned.
+     *
+     * @param uri
+     *        the URI whose parameters are to be parsed.
+     *
+     * @return &lt;Code&gt;Map&lt;/Code&gt; of properties
+     *
+     * @throws Exception if an error occurs while parsing the query options.
+     */
+    public static Map&lt;String, String&gt; parseParameters(URI uri) throws Exception {
+<span class="fc bfc" id="L154" title="All 4 branches covered.">        if (uri == null || uri.getQuery() == null) {</span>
+<span class="fc" id="L155">            return Collections.emptyMap();</span>
+        }
+
+<span class="fc" id="L158">        return parseQuery(stripPrefix(uri.getQuery(), &quot;?&quot;));</span>
+    }
+
+    /**
+     * Parse properties from a named resource -eg. a URI or a simple name e.g.
+     * {@literal foo?name=&quot;fred&quot;&amp;size=2}
+     *
+     * @param uri
+     *        the URI whose parameters are to be parsed.
+     *
+     * @return &lt;Code&gt;Map&lt;/Code&gt; of properties
+     *
+     * @throws Exception if an error occurs while parsing the query options.
+     */
+    public static Map&lt;String, String&gt; parseParameters(String uri) throws Exception {
+<span class="fc bfc" id="L173" title="All 2 branches covered.">        if (uri == null) {</span>
+<span class="fc" id="L174">            return Collections.emptyMap();</span>
+        }
+
+<span class="fc" id="L177">        return parseQuery(stripUpto(uri, '?'));</span>
+    }
+
+    /**
+     * Get properties from a URI query string.
+     *
+     * @param queryString
+     *        the string value returned from a call to the URI class getQuery method.
+     *
+     * @return &lt;Code&gt;Map&lt;/Code&gt; of properties from the parsed string.
+     *
+     * @throws Exception if an error occurs while parsing the query options.
+     */
+    public static Map&lt;String, String&gt; parseQuery(String queryString) throws Exception {
+<span class="fc bfc" id="L191" title="All 4 branches covered.">        if (queryString != null &amp;&amp; !queryString.isEmpty()) {</span>
+<span class="fc" id="L192">            Map&lt;String, String&gt; rc = new HashMap&lt;String, String&gt;();</span>
+<span class="fc" id="L193">            String[] parameters = queryString.split(&quot;&amp;&quot;);</span>
+<span class="fc bfc" id="L194" title="All 2 branches covered.">            for (int i = 0; i &lt; parameters.length; i++) {</span>
+<span class="fc" id="L195">                int p = parameters[i].indexOf(&quot;=&quot;);</span>
+<span class="fc bfc" id="L196" title="All 2 branches covered.">                if (p &gt;= 0) {</span>
+<span class="fc" id="L197">                    String name = URLDecoder.decode(parameters[i].substring(0, p), &quot;UTF-8&quot;);</span>
+<span class="fc" id="L198">                    String value = URLDecoder.decode(parameters[i].substring(p + 1), &quot;UTF-8&quot;);</span>
+<span class="fc" id="L199">                    rc.put(name, value);</span>
+<span class="fc" id="L200">                } else {</span>
+<span class="fc" id="L201">                    rc.put(parameters[i], null);</span>
+                }
+            }
+<span class="fc" id="L204">            return rc;</span>
+        }
+
+<span class="fc" id="L207">        return Collections.emptyMap();</span>
+    }
+
+    /**
+     * Given a map of properties, filter out only those prefixed with the given value, the
+     * values filtered are returned in a new Map instance.
+     *
+     * @param properties
+     *        The map of properties to filter.
+     * @param optionPrefix
+     *        The prefix value to use when filtering.
+     *
+     * @return a filter map with only values that match the given prefix.
+     */
+    public static Map&lt;String, String&gt; filterProperties(Map&lt;String, String&gt; properties, String optionPrefix) {
+<span class="fc bfc" id="L222" title="All 2 branches covered.">        if (properties == null) {</span>
+<span class="fc" id="L223">            throw new IllegalArgumentException(&quot;The given properties object was null.&quot;);</span>
+        }
+
+<span class="fc" id="L226">        HashMap&lt;String, String&gt; rc = new HashMap&lt;String, String&gt;(properties.size());</span>
+
+<span class="fc bfc" id="L228" title="All 2 branches covered.">        for (Iterator&lt;Entry&lt;String, String&gt;&gt; iter = properties.entrySet().iterator(); iter.hasNext();) {</span>
+<span class="fc" id="L229">            Entry&lt;String, String&gt; entry = iter.next();</span>
+<span class="fc bfc" id="L230" title="All 2 branches covered.">            if (entry.getKey().startsWith(optionPrefix)) {</span>
+<span class="fc" id="L231">                String name = entry.getKey().substring(optionPrefix.length());</span>
+<span class="fc" id="L232">                rc.put(name, entry.getValue());</span>
+<span class="fc" id="L233">                iter.remove();</span>
+            }
+<span class="fc" id="L235">        }</span>
+
+<span class="fc" id="L237">        return rc;</span>
+    }
+
+    /**
+     * Enumerate the properties of the target object and add them as additional entries
+     * to the query string of the given string URI.
+     *
+     * @param uri
+     *        The string URI value to append the object properties to.
+     * @param bean
+     *        The Object whose properties will be added to the target URI.
+     *
+     * @return a new String value that is the original URI with the added bean properties.
+     *
+     * @throws Exception if an error occurs while enumerating the bean properties.
+     */
+    public static String addPropertiesToURIFromBean(String uri, Object bean) throws Exception {
+<span class="fc" id="L254">        Map&lt;String, String&gt; properties = PropertyUtil.getProperties(bean);</span>
+<span class="fc" id="L255">        return PropertyUtil.addPropertiesToURI(uri, properties);</span>
+    }
+
+    /**
+     * Enumerate the properties of the target object and add them as additional entries
+     * to the query string of the given URI.
+     *
+     * @param uri
+     *        The URI value to append the object properties to.
+     * @param properties
+     *        The Object whose properties will be added to the target URI.
+     *
+     * @return a new String value that is the original URI with the added bean properties.
+     *
+     * @throws Exception if an error occurs while enumerating the bean properties.
+     */
+    public static String addPropertiesToURI(URI uri, Map&lt;String, String&gt; properties) throws Exception {
+<span class="fc" id="L272">        return addPropertiesToURI(uri.toString(), properties);</span>
+    }
+
+    /**
+     * Append the given properties to the query portion of the given URI.
+     *
+     * @param uri
+     *        The string URI value to append the object properties to.
+     * @param properties
+     *        The properties that will be added to the target URI.
+     *
+     * @return a new String value that is the original URI with the added properties.
+     *
+     * @throws Exception if an error occurs while building the new URI string.
+     */
+    public static String addPropertiesToURI(String uri, Map&lt;String, String&gt; properties) throws Exception {
+<span class="fc" id="L288">        String result = uri;</span>
+<span class="fc bfc" id="L289" title="All 4 branches covered.">        if (uri != null &amp;&amp; properties != null) {</span>
+<span class="fc" id="L290">            StringBuilder base = new StringBuilder(stripBefore(uri, '?'));</span>
+<span class="fc" id="L291">            Map&lt;String, String&gt; map = parseParameters(uri);</span>
+<span class="fc bfc" id="L292" title="All 2 branches covered.">            if (!map.isEmpty()) {</span>
+<span class="fc" id="L293">                map.putAll(properties);</span>
+            } else {
+<span class="fc" id="L295">                map = properties;</span>
+            }
+<span class="fc bfc" id="L297" title="All 2 branches covered.">            if (!map.isEmpty()) {</span>
+<span class="fc" id="L298">                base.append('?');</span>
+<span class="fc" id="L299">                boolean first = true;</span>
+<span class="fc bfc" id="L300" title="All 2 branches covered.">                for (Map.Entry&lt;String, String&gt; entry : map.entrySet()) {</span>
+<span class="fc bfc" id="L301" title="All 2 branches covered.">                    if (!first) {</span>
+<span class="fc" id="L302">                        base.append('&amp;');</span>
+                    }
+<span class="fc" id="L304">                    first = false;</span>
+<span class="fc" id="L305">                    base.append(entry.getKey()).append(&quot;=&quot;).append(entry.getValue());</span>
+<span class="fc" id="L306">                }</span>
+<span class="fc" id="L307">                result = base.toString();</span>
+            }
+        }
+<span class="fc" id="L310">        return result;</span>
+    }
+
+    /**
+     * Set properties on an object using the provided map. The return value
+     * indicates if all properties from the given map were set on the target object.
+     *
+     * @param target
+     *        the object whose properties are to be set from the map options.
+     * @param properties
+     *        the properties that should be applied to the given object.
+     *
+     * @return true if all values in the properties map were applied to the target object.
+     */
+    public static Map&lt;String, String&gt; setProperties(Object target, Map&lt;String, String&gt; properties) {
+<span class="fc bfc" id="L325" title="All 2 branches covered.">        if (target == null) {</span>
+<span class="fc" id="L326">            throw new IllegalArgumentException(&quot;target object cannot be null&quot;);</span>
+        }
+<span class="fc bfc" id="L328" title="All 2 branches covered.">        if (properties == null) {</span>
+<span class="fc" id="L329">            throw new IllegalArgumentException(&quot;Given Properties object cannot be null&quot;);</span>
+        }
+
+<span class="fc" id="L332">        Map&lt;String, String&gt; unmatched = new HashMap&lt;String, String&gt;();</span>
+
+<span class="fc bfc" id="L334" title="All 2 branches covered.">        for (Map.Entry&lt;String, String&gt; entry : properties.entrySet()) {</span>
+<span class="fc bfc" id="L335" title="All 2 branches covered.">            if (!setProperty(target, entry.getKey(), entry.getValue())) {</span>
+<span class="fc" id="L336">                unmatched.put((String) entry.getKey(), entry.getValue());</span>
+            }
+<span class="fc" id="L338">        }</span>
+
+<span class="fc" id="L340">        return Collections.unmodifiableMap(unmatched);</span>
+    }
+
+    //TODO: common impl for above and below methods.
+
+    /**
+     * Set properties on an object using the provided Properties object. The return value
+     * indicates if all properties from the given map were set on the target object.
+     *
+     * @param target
+     *        the object whose properties are to be set from the map options.
+     * @param properties
+     *        the properties that should be applied to the given object.
+     *
+     * @return an unmodifiable map with any values that could not be applied to the target.
+     */
+    public static Map&lt;String, Object&gt; setProperties(Object target, Properties properties) {
+<span class="pc bpc" id="L357" title="1 of 2 branches missed.">        if (target == null) {</span>
+<span class="nc" id="L358">            throw new IllegalArgumentException(&quot;target object cannot be null&quot;);</span>
+        }
+<span class="fc bfc" id="L360" title="All 2 branches covered.">        if (properties == null) {</span>
+<span class="fc" id="L361">            throw new IllegalArgumentException(&quot;Given Properties object cannot be null&quot;);</span>
+        }
+
+<span class="fc" id="L364">        Map&lt;String, Object&gt; unmatched = new HashMap&lt;String, Object&gt;();</span>
+
+<span class="fc bfc" id="L366" title="All 2 branches covered.">        for (Map.Entry&lt;Object, Object&gt; entry : properties.entrySet()) {</span>
+<span class="fc bfc" id="L367" title="All 2 branches covered.">            if (!setProperty(target, (String) entry.getKey(), entry.getValue())) {</span>
+<span class="fc" id="L368">                unmatched.put((String) entry.getKey(), entry.getValue());</span>
+            }
+<span class="fc" id="L370">        }</span>
+
+<span class="fc" id="L372">        return Collections.&lt;String, Object&gt;unmodifiableMap(unmatched);</span>
+    }
+
+    /**
+     * Get properties from an object using reflection.  If the passed object is null an
+     * empty &lt;code&gt;Map&lt;/code&gt; is returned.
+     *
+     * @param object
+     *        the Object whose properties are to be extracted.
+     *
+     * @return &lt;Code&gt;Map&lt;/Code&gt; of properties extracted from the given object.
+     *
+     * @throws Exception if an error occurs while examining the object's properties.
+     */
+    public static Map&lt;String, String&gt; getProperties(Object object) throws Exception {
+<span class="fc bfc" id="L387" title="All 2 branches covered.">        if (object == null) {</span>
+<span class="fc" id="L388">            return Collections.emptyMap();</span>
+        }
+
+<span class="fc" id="L391">        Map&lt;String, String&gt; properties = new LinkedHashMap&lt;String, String&gt;();</span>
+<span class="fc" id="L392">        BeanInfo beanInfo = Introspector.getBeanInfo(object.getClass());</span>
+<span class="fc" id="L393">        Object[] NULL_ARG = {};</span>
+<span class="fc" id="L394">        PropertyDescriptor[] propertyDescriptors = beanInfo.getPropertyDescriptors();</span>
+<span class="pc bpc" id="L395" title="1 of 2 branches missed.">        if (propertyDescriptors != null) {</span>
+<span class="fc bfc" id="L396" title="All 2 branches covered.">            for (int i = 0; i &lt; propertyDescriptors.length; i++) {</span>
+<span class="fc" id="L397">                PropertyDescriptor pd = propertyDescriptors[i];</span>
+<span class="fc bfc" id="L398" title="All 8 branches covered.">                if (pd.getReadMethod() != null &amp;&amp; !pd.getName().equals(&quot;class&quot;) &amp;&amp; !pd.getName().equals(&quot;properties&quot;) &amp;&amp; !pd.getName().equals(&quot;reference&quot;)) {</span>
+<span class="fc" id="L399">                    Object value = pd.getReadMethod().invoke(object, NULL_ARG);</span>
+<span class="fc bfc" id="L400" title="All 2 branches covered.">                    if (value != null) {</span>
+<span class="fc bfc" id="L401" title="All 10 branches covered.">                        if (value instanceof Boolean || value instanceof Number || value instanceof String || value instanceof URI || value instanceof URL) {</span>
+<span class="fc" id="L402">                            properties.put(pd.getName(), (&quot;&quot; + value));</span>
+<span class="fc bfc" id="L403" title="All 2 branches covered.">                        } else if (value instanceof SSLContext) {</span>
+                            // ignore this one..
+                        } else {
+<span class="fc" id="L406">                            Map&lt;String, String&gt; inner = getProperties(value);</span>
+<span class="fc bfc" id="L407" title="All 2 branches covered.">                            for (Map.Entry&lt;String, String&gt; entry : inner.entrySet()) {</span>
+<span class="fc" id="L408">                                properties.put(pd.getName() + &quot;.&quot; + entry.getKey(), entry.getValue());</span>
+<span class="fc" id="L409">                            }</span>
+                        }
+                    }
+                }
+            }
+        }
+
+<span class="fc" id="L416">        return properties;</span>
+    }
+
+    /**
+     * Find a specific property getter in a given object based on a property name.
+     *
+     * @param object
+     *        the object to search.
+     * @param name
+     *        the property name to search for.
+     *
+     * @return the result of invoking the specific property get method.
+     *
+     * @throws Exception if an error occurs while searching the object's bean info.
+     */
+    public static Object getProperty(Object object, String name) throws Exception {
+<span class="fc" id="L432">        BeanInfo beanInfo = Introspector.getBeanInfo(object.getClass());</span>
+<span class="fc" id="L433">        PropertyDescriptor[] propertyDescriptors = beanInfo.getPropertyDescriptors();</span>
+<span class="pc bpc" id="L434" title="1 of 2 branches missed.">        if (propertyDescriptors != null) {</span>
+<span class="fc bfc" id="L435" title="All 2 branches covered.">            for (int i = 0; i &lt; propertyDescriptors.length; i++) {</span>
+<span class="fc" id="L436">                PropertyDescriptor pd = propertyDescriptors[i];</span>
+<span class="fc bfc" id="L437" title="All 4 branches covered.">                if (pd.getReadMethod() != null &amp;&amp; pd.getName().equals(name)) {</span>
+<span class="fc" id="L438">                    return pd.getReadMethod().invoke(object);</span>
+                }
+            }
+        }
+<span class="fc" id="L442">        return null;</span>
+    }
+
+    /**
+     * Set a property named property on a given Object.
+     * &lt;p&gt;
+     * The object is searched for an set method that would match the given named
+     * property and if one is found.  If necessary an attempt will be made to convert
+     * the new value to an acceptable type.
+     *
+     * @param target
+     *        The object whose property is to be set.
+     * @param name
+     *        The name of the property to set.
+     * @param value
+     *        The new value to set for the named property.
+     *
+     * @return true if the property was able to be set on the target object.
+     */
+    public static boolean setProperty(Object target, String name, Object value) {
+        try {
+<span class="fc" id="L463">            int dotPos = name.indexOf(&quot;.&quot;);</span>
+<span class="fc bfc" id="L464" title="All 2 branches covered.">            while (dotPos &gt;= 0) {</span>
+<span class="fc" id="L465">                String getterName = name.substring(0, dotPos);</span>
+<span class="fc" id="L466">                target = getProperty(target, getterName);</span>
+<span class="fc" id="L467">                name = name.substring(dotPos + 1);</span>
+<span class="fc" id="L468">                dotPos = name.indexOf(&quot;.&quot;);</span>
+<span class="fc" id="L469">            }</span>
+
+<span class="fc" id="L471">            Class&lt;? extends Object&gt; clazz = target.getClass();</span>
+<span class="fc" id="L472">            Method setter = findSetterMethod(clazz, name);</span>
+<span class="fc bfc" id="L473" title="All 2 branches covered.">            if (setter == null) {</span>
+<span class="fc" id="L474">                return false;</span>
+            }
+            // If the type is null or it matches the needed type, just use the
+            // value directly
+<span class="fc bfc" id="L478" title="All 4 branches covered.">            if (value == null || value.getClass() == setter.getParameterTypes()[0]) {</span>
+<span class="fc" id="L479">                setter.invoke(target, new Object[] { value });</span>
+            } else {
+<span class="fc" id="L481">                setter.invoke(target, new Object[] { convert(value, setter.getParameterTypes()[0]) });</span>
+            }
+<span class="fc" id="L483">            return true;</span>
+<span class="fc" id="L484">        } catch (Throwable ignore) {</span>
+<span class="fc" id="L485">            return false;</span>
+        }
+    }
+
+    /**
+     * Return a String minus the given prefix.  If the string does not start
+     * with the given prefix the original string value is returned.
+     *
+     * @param value
+     *        The String whose prefix is to be removed.
+     * @param prefix
+     *        The prefix string to remove from the target string.
+     *
+     * @return stripped version of the original input string.
+     */
+    public static String stripPrefix(String value, String prefix) {
+<span class="fc bfc" id="L501" title="All 6 branches covered.">        if (value != null &amp;&amp; prefix != null &amp;&amp; value.startsWith(prefix)) {</span>
+<span class="fc" id="L502">            return value.substring(prefix.length());</span>
+        }
+<span class="fc" id="L504">        return value;</span>
+    }
+
+    /**
+     * Return a portion of a String value by looking beyond the given
+     * character.
+     *
+     * @param value
+     *        The string value to split
+     * @param c
+     *        The character that marks the split point.
+     *
+     * @return the sub-string value starting beyond the given character.
+     */
+    public static String stripUpto(String value, char c) {
+<span class="fc" id="L519">        String result = null;</span>
+<span class="fc bfc" id="L520" title="All 2 branches covered.">        if (value != null) {</span>
+<span class="fc" id="L521">            int index = value.indexOf(c);</span>
+<span class="fc bfc" id="L522" title="All 2 branches covered.">            if (index &gt; 0) {</span>
+<span class="fc" id="L523">                result = value.substring(index + 1);</span>
+            }
+        }
+<span class="fc" id="L526">        return result;</span>
+    }
+
+    /**
+     * Return a String up to and including character
+     *
+     * @param value
+     *        The string value to split
+     * @param c
+     *        The character that marks the start of split point.
+     *
+     * @return the sub-string value starting from the given character.
+     */
+    public static String stripBefore(String value, char c) {
+<span class="fc" id="L540">        String result = value;</span>
+<span class="fc bfc" id="L541" title="All 2 branches covered.">        if (value != null) {</span>
+<span class="fc" id="L542">            int index = value.indexOf(c);</span>
+<span class="fc bfc" id="L543" title="All 2 branches covered.">            if (index &gt; 0) {</span>
+<span class="fc" id="L544">                result = value.substring(0, index);</span>
+            }
+        }
+<span class="fc" id="L547">        return result;</span>
+    }
+
+    private static Method findSetterMethod(Class&lt;? extends Object&gt; clazz, String name) {
+        // Build the method name.
+<span class="fc" id="L552">        name = &quot;set&quot; + name.substring(0, 1).toUpperCase() + name.substring(1);</span>
+<span class="fc" id="L553">        Method[] methods = clazz.getMethods();</span>
+<span class="fc bfc" id="L554" title="All 2 branches covered.">        for (int i = 0; i &lt; methods.length; i++) {</span>
+<span class="fc" id="L555">            Method method = methods[i];</span>
+<span class="fc" id="L556">            Class&lt;? extends Object&gt; params[] = method.getParameterTypes();</span>
+<span class="fc bfc" id="L557" title="All 4 branches covered.">            if (method.getName().equals(name) &amp;&amp; params.length == 1) {</span>
+<span class="fc" id="L558">                return method;</span>
+            }
+        }
+<span class="fc" id="L561">        return null;</span>
+    }
+
+    private static Object convert(Object value, Class&lt;?&gt; type) throws Exception {
+<span class="pc bpc" id="L565" title="1 of 2 branches missed.">        if (value == null) {</span>
+<span class="nc bnc" id="L566" title="All 2 branches missed.">            if (boolean.class.isAssignableFrom(type)) {</span>
+<span class="nc" id="L567">                return Boolean.FALSE;</span>
+            }
+<span class="nc" id="L569">            return null;</span>
+        }
+
+<span class="pc bpc" id="L572" title="1 of 2 branches missed.">        if (type.isAssignableFrom(value.getClass())) {</span>
+<span class="nc" id="L573">            return type.cast(value);</span>
+        }
+
+        // special for String[] as we do not want to use a PropertyEditor for that
+<span class="fc bfc" id="L577" title="All 2 branches covered.">        if (type.isAssignableFrom(String[].class)) {</span>
+<span class="fc" id="L578">            return StringArrayConverter.convertToStringArray(value);</span>
+        }
+
+<span class="fc bfc" id="L581" title="All 2 branches covered.">        if (type == URI.class) {</span>
+<span class="fc" id="L582">            return new URI(value.toString());</span>
+        }
+
+<span class="fc" id="L585">        return TypeConversionSupport.convert(value, type);</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

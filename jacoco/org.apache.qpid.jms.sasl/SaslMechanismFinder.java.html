@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>SaslMechanismFinder.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.sasl</a> &gt; <span class="el_source">SaslMechanismFinder.java</span></div><h1>SaslMechanismFinder.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.sasl;
+
+import java.security.Principal;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Set;
+
+import org.apache.qpid.jms.util.FactoryFinder;
+import org.apache.qpid.jms.util.ResourceNotFoundException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * Used to find a SASL Mechanism that most closely matches the preferred set
+ * of Mechanisms supported by the remote peer.
+ *
+ * The Matching mechanism is chosen by first find all instances of SASL
+ * mechanism types that are supported on the remote peer, and then making a
+ * final selection based on the Mechanism in the found set that has the
+ * highest priority value.
+ */
+<span class="nc" id="L39">public class SaslMechanismFinder {</span>
+
+<span class="fc" id="L41">    private static final Logger LOG = LoggerFactory.getLogger(SaslMechanismFinder.class);</span>
+
+<span class="fc" id="L43">    private static final FactoryFinder&lt;MechanismFactory&gt; MECHANISM_FACTORY_FINDER =</span>
+        new FactoryFinder&lt;MechanismFactory&gt;(MechanismFactory.class,
+            &quot;META-INF/services/&quot; + SaslMechanismFinder.class.getPackage().getName().replace(&quot;.&quot;, &quot;/&quot;) + &quot;/&quot;);
+
+    /**
+     * Attempts to find a matching Mechanism implementation given a list of supported
+     * mechanisms from a remote peer.  Can return null if no matching Mechanisms are
+     * found.
+     *
+     * @param username
+     *        the username, or null if there is none
+     * @param password
+     *        the password, or null if there is none
+     * @param localPrincipal
+     *        the Principal associated with the transport, or null if there is none
+     * @param mechRestrictions
+     *        The possible mechanism(s) to which the client should restrict its
+     *        mechanism selection to if offered by the server, or null if there
+     *        is no restriction
+     * @param remoteMechanisms
+     *        list of mechanism names that are supported by the remote peer.
+     *
+     * @return the best matching Mechanism for the supported remote set.
+     */
+    public static Mechanism findMatchingMechanism(String username, String password, Principal localPrincipal, Set&lt;String&gt; mechRestrictions, String... remoteMechanisms) {
+
+<span class="fc" id="L69">        Mechanism match = null;</span>
+<span class="fc" id="L70">        List&lt;Mechanism&gt; found = new ArrayList&lt;Mechanism&gt;();</span>
+
+<span class="fc bfc" id="L72" title="All 2 branches covered.">        for (String remoteMechanism : remoteMechanisms) {</span>
+<span class="fc" id="L73">            MechanismFactory factory = findMechanismFactory(remoteMechanism);</span>
+<span class="pc bpc" id="L74" title="1 of 2 branches missed.">            if (factory != null) {</span>
+<span class="fc" id="L75">                Mechanism mech = factory.createMechanism();</span>
+<span class="fc bfc" id="L76" title="All 4 branches covered.">                if(mechRestrictions != null &amp;&amp; !mechRestrictions.contains(remoteMechanism)) {</span>
+<span class="fc" id="L77">                    LOG.debug(&quot;Skipping {} mechanism because it is not in the configured mechanisms restriction set&quot;, remoteMechanism);</span>
+<span class="fc bfc" id="L78" title="All 2 branches covered.">                } else if(mech.isApplicable(username, password, localPrincipal)) {</span>
+<span class="fc" id="L79">                    found.add(mech);</span>
+                } else {
+<span class="fc" id="L81">                    LOG.debug(&quot;Skipping {} mechanism because the available credentials are not sufficient&quot;, mech);</span>
+                }
+            }
+        }
+
+<span class="pc bpc" id="L86" title="1 of 2 branches missed.">        if (!found.isEmpty()) {</span>
+            // Sorts by priority using Mechanism comparison and return the last value in
+            // list which is the Mechanism deemed to be the highest priority match.
+<span class="fc" id="L89">            Collections.sort(found);</span>
+<span class="fc" id="L90">            match = found.get(found.size() - 1);</span>
+        }
+
+<span class="fc" id="L93">        LOG.info(&quot;Best match for SASL auth was: {}&quot;, match);</span>
+
+<span class="fc" id="L95">        return match;</span>
+    }
+
+    /**
+     * Searches for a MechanismFactory by using the scheme from the given name.
+     *
+     * The search first checks the local cache of mechanism factories before moving on
+     * to search in the classpath.
+     *
+     * @param name
+     *        The name of the authentication mechanism to search for.
+     *
+     * @return a mechanism factory instance matching the name, or null if none was created.
+     */
+    protected static MechanismFactory findMechanismFactory(String name) {
+<span class="pc bpc" id="L110" title="2 of 4 branches missed.">        if (name == null || name.isEmpty()) {</span>
+<span class="nc" id="L111">            LOG.warn(&quot;No SASL mechanism name was specified&quot;);</span>
+<span class="nc" id="L112">            return null;</span>
+        }
+
+<span class="fc" id="L115">        MechanismFactory factory = null;</span>
+        try {
+<span class="fc" id="L117">            factory = MECHANISM_FACTORY_FINDER.newInstance(name);</span>
+<span class="nc" id="L118">        } catch (ResourceNotFoundException rnfe) {</span>
+<span class="nc" id="L119">            LOG.debug(&quot;Unknown SASL mechanism: [&quot; + name + &quot;]&quot;);</span>
+<span class="nc" id="L120">        } catch (Exception e) {</span>
+<span class="nc" id="L121">            LOG.warn(&quot;Caught exception while finding factory for SASL mechanism {}: {}&quot;, name, e.getMessage());</span>
+<span class="pc" id="L122">        }</span>
+
+<span class="fc" id="L124">        return factory;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

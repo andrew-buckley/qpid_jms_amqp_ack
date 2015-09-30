@@ -1,0 +1,1052 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>JmsSession.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms</a> &gt; <span class="el_source">JmsSession.java</span></div><h1>JmsSession.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms;
+
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
+
+import javax.jms.BytesMessage;
+import javax.jms.DeliveryMode;
+import javax.jms.Destination;
+import javax.jms.IllegalStateException;
+import javax.jms.InvalidDestinationException;
+import javax.jms.InvalidSelectorException;
+import javax.jms.JMSException;
+import javax.jms.MapMessage;
+import javax.jms.Message;
+import javax.jms.MessageConsumer;
+import javax.jms.MessageListener;
+import javax.jms.MessageProducer;
+import javax.jms.ObjectMessage;
+import javax.jms.Queue;
+import javax.jms.QueueBrowser;
+import javax.jms.QueueReceiver;
+import javax.jms.QueueSender;
+import javax.jms.QueueSession;
+import javax.jms.Session;
+import javax.jms.StreamMessage;
+import javax.jms.TemporaryQueue;
+import javax.jms.TemporaryTopic;
+import javax.jms.TextMessage;
+import javax.jms.Topic;
+import javax.jms.TopicPublisher;
+import javax.jms.TopicSession;
+import javax.jms.TopicSubscriber;
+
+import org.apache.qpid.jms.message.JmsInboundMessageDispatch;
+import org.apache.qpid.jms.message.JmsMessage;
+import org.apache.qpid.jms.message.JmsMessageTransformation;
+import org.apache.qpid.jms.message.JmsOutboundMessageDispatch;
+import org.apache.qpid.jms.meta.JmsConsumerId;
+import org.apache.qpid.jms.meta.JmsConsumerInfo;
+import org.apache.qpid.jms.meta.JmsProducerId;
+import org.apache.qpid.jms.meta.JmsProducerInfo;
+import org.apache.qpid.jms.meta.JmsResource;
+import org.apache.qpid.jms.meta.JmsSessionId;
+import org.apache.qpid.jms.meta.JmsSessionInfo;
+import org.apache.qpid.jms.provider.Provider;
+import org.apache.qpid.jms.provider.ProviderConstants.ACK_TYPE;
+import org.apache.qpid.jms.provider.ProviderFuture;
+import org.apache.qpid.jms.selector.SelectorParser;
+import org.apache.qpid.jms.selector.filter.FilterException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+/**
+ * JMS Session implementation
+ */
+public class JmsSession implements Session, QueueSession, TopicSession, JmsMessageDispatcher {
+
+<span class="fc" id="L84">    private static final Logger LOG = LoggerFactory.getLogger(JmsSession.class);</span>
+
+    private final JmsConnection connection;
+    private final int acknowledgementMode;
+<span class="fc" id="L88">    private final Map&lt;JmsProducerId, JmsMessageProducer&gt; producers = new ConcurrentHashMap&lt;JmsProducerId, JmsMessageProducer&gt;();</span>
+<span class="fc" id="L89">    private final Map&lt;JmsConsumerId, JmsMessageConsumer&gt; consumers = new ConcurrentHashMap&lt;JmsConsumerId, JmsMessageConsumer&gt;();</span>
+    private MessageListener messageListener;
+<span class="fc" id="L91">    private final AtomicBoolean closed = new AtomicBoolean();</span>
+<span class="fc" id="L92">    private final AtomicBoolean started = new AtomicBoolean();</span>
+<span class="fc" id="L93">    private final LinkedBlockingQueue&lt;JmsInboundMessageDispatch&gt; stoppedMessages =</span>
+        new LinkedBlockingQueue&lt;JmsInboundMessageDispatch&gt;(10000);
+    private JmsPrefetchPolicy prefetchPolicy;
+    private final JmsSessionInfo sessionInfo;
+    private ExecutorService executor;
+<span class="fc" id="L98">    private final ReentrantLock sendLock = new ReentrantLock();</span>
+
+<span class="fc" id="L100">    private final AtomicLong consumerIdGenerator = new AtomicLong();</span>
+<span class="fc" id="L101">    private final AtomicLong producerIdGenerator = new AtomicLong();</span>
+    private JmsTransactionContext transactionContext;
+    private boolean sessionRecovered;
+    private Exception failureCause;
+
+<span class="fc" id="L106">    protected JmsSession(JmsConnection connection, JmsSessionId sessionId, int acknowledgementMode) throws JMSException {</span>
+<span class="fc" id="L107">        this.connection = connection;</span>
+<span class="fc" id="L108">        this.acknowledgementMode = acknowledgementMode;</span>
+<span class="fc" id="L109">        this.prefetchPolicy = new JmsPrefetchPolicy(connection.getPrefetchPolicy());</span>
+
+<span class="fc bfc" id="L111" title="All 2 branches covered.">        if (acknowledgementMode == SESSION_TRANSACTED) {</span>
+<span class="fc" id="L112">            setTransactionContext(new JmsLocalTransactionContext(this));</span>
+        } else {
+<span class="fc" id="L114">            setTransactionContext(new JmsNoTxTransactionContext());</span>
+        }
+
+<span class="fc" id="L117">        this.sessionInfo = new JmsSessionInfo(sessionId);</span>
+<span class="fc" id="L118">        this.sessionInfo.setAcknowledgementMode(acknowledgementMode);</span>
+<span class="fc" id="L119">        this.sessionInfo.setSendAcksAsync(connection.isSendAcksAsync());</span>
+
+<span class="fc" id="L121">        connection.createResource(sessionInfo);</span>
+<span class="fc" id="L122">    }</span>
+
+    int acknowledgementMode() {
+<span class="fc" id="L125">        return acknowledgementMode;</span>
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Session methods
+    //////////////////////////////////////////////////////////////////////////
+
+    @Override
+    public int getAcknowledgeMode() throws JMSException {
+<span class="fc" id="L134">        checkClosed();</span>
+<span class="fc" id="L135">        return acknowledgementMode;</span>
+    }
+
+    @Override
+    public boolean getTransacted() throws JMSException {
+<span class="fc" id="L140">        checkClosed();</span>
+<span class="fc" id="L141">        return isTransacted();</span>
+    }
+
+    @Override
+    public MessageListener getMessageListener() throws JMSException {
+<span class="fc" id="L146">        checkClosed();</span>
+<span class="fc" id="L147">        return messageListener;</span>
+    }
+
+    @Override
+    public void setMessageListener(MessageListener listener) throws JMSException {
+<span class="fc" id="L152">        checkClosed();</span>
+<span class="fc" id="L153">        this.messageListener = listener;</span>
+<span class="fc" id="L154">    }</span>
+
+    @Override
+    public void recover() throws JMSException {
+<span class="fc" id="L158">        checkClosed();</span>
+<span class="fc bfc" id="L159" title="All 2 branches covered.">        if (getTransacted()) {</span>
+<span class="fc" id="L160">            throw new javax.jms.IllegalStateException(&quot;Cannot call recover() on a transacted session&quot;);</span>
+        }
+
+<span class="fc" id="L163">        connection.recover(getSessionId());</span>
+<span class="fc" id="L164">        sessionRecovered = true;</span>
+<span class="fc" id="L165">    }</span>
+
+    @Override
+    public void commit() throws JMSException {
+<span class="fc" id="L169">        checkClosed();</span>
+
+<span class="fc bfc" id="L171" title="All 2 branches covered.">        if (!getTransacted()) {</span>
+<span class="fc" id="L172">            throw new javax.jms.IllegalStateException(&quot;Not a transacted session&quot;);</span>
+        }
+
+<span class="fc" id="L175">        transactionContext.commit();</span>
+<span class="fc" id="L176">    }</span>
+
+    @Override
+    public void rollback() throws JMSException {
+<span class="fc" id="L180">        checkClosed();</span>
+
+<span class="fc bfc" id="L182" title="All 2 branches covered.">        if (!getTransacted()) {</span>
+<span class="fc" id="L183">            throw new javax.jms.IllegalStateException(&quot;Not a transacted session&quot;);</span>
+        }
+
+        // Stop processing any new messages that arrive
+<span class="fc bfc" id="L187" title="All 2 branches covered.">        for (JmsMessageConsumer c : consumers.values()) {</span>
+<span class="fc" id="L188">            c.suspendForRollback();</span>
+<span class="fc" id="L189">        }</span>
+
+<span class="fc" id="L191">        transactionContext.rollback();</span>
+
+<span class="fc bfc" id="L193" title="All 2 branches covered.">        for (JmsMessageConsumer c : consumers.values()) {</span>
+<span class="fc" id="L194">            c.resumeAfterRollback();</span>
+<span class="fc" id="L195">        }</span>
+<span class="fc" id="L196">    }</span>
+
+    @Override
+    public void run() {
+        try {
+<span class="nc" id="L201">            checkClosed();</span>
+<span class="fc" id="L202">        } catch (IllegalStateException e) {</span>
+<span class="fc" id="L203">            throw new RuntimeException(e);</span>
+<span class="nc" id="L204">        }</span>
+
+<span class="nc" id="L206">        throw new UnsupportedOperationException();</span>
+    }
+
+    @Override
+    public void close() throws JMSException {
+<span class="fc bfc" id="L211" title="All 2 branches covered.">        if (!closed.get()) {</span>
+<span class="fc" id="L212">            doClose();</span>
+        }
+<span class="fc" id="L214">    }</span>
+
+    /**
+     * Shutdown the Session and release all resources.  Once completed the Session can
+     * request that the Provider destroy the Session and it's child resources.
+     *
+     * @throws JMSException
+     */
+    protected void doClose() throws JMSException {
+<span class="fc" id="L223">        boolean interrupted = Thread.interrupted();</span>
+<span class="fc" id="L224">        shutdown();</span>
+        try {
+<span class="fc" id="L226">            transactionContext.rollback();</span>
+<span class="nc" id="L227">        } catch (JMSException e) {</span>
+<span class="fc" id="L228">        }</span>
+<span class="fc" id="L229">        connection.removeSession(sessionInfo);</span>
+<span class="fc" id="L230">        connection.destroyResource(sessionInfo);</span>
+<span class="pc bpc" id="L231" title="1 of 2 branches missed.">        if (interrupted) {</span>
+<span class="nc" id="L232">            Thread.currentThread().interrupt();</span>
+        }
+<span class="fc" id="L234">    }</span>
+
+    /**
+     * This method should terminate all Session resources and prepare for disposal of the
+     * Session.  It is called either from the Session close method or from the Connection
+     * when a close request is made and the Connection wants to cleanup all Session resources.
+     *
+     * This method should not attempt to send any requests to the Provider as the resources
+     * that were associated with this session are either cleaned up by another method in the
+     * session or are already gone due to remote close or some other error.
+     *
+     * @throws JMSException if an error occurs while shutting down the session resources.
+     */
+    protected void shutdown() throws JMSException {
+<span class="fc" id="L248">        shutdown(null);</span>
+<span class="fc" id="L249">    }</span>
+
+    protected void shutdown(Exception cause) throws JMSException {
+<span class="fc bfc" id="L252" title="All 2 branches covered.">        if (closed.compareAndSet(false, true)) {</span>
+<span class="fc" id="L253">            stop();</span>
+<span class="fc" id="L254">            failureCause = cause;</span>
+<span class="fc bfc" id="L255" title="All 2 branches covered.">            for (JmsMessageConsumer consumer : new ArrayList&lt;JmsMessageConsumer&gt;(this.consumers.values())) {</span>
+<span class="fc" id="L256">                consumer.shutdown(cause);</span>
+<span class="fc" id="L257">            }</span>
+
+<span class="fc bfc" id="L259" title="All 2 branches covered.">            for (JmsMessageProducer producer : new ArrayList&lt;JmsMessageProducer&gt;(this.producers.values())) {</span>
+<span class="fc" id="L260">                producer.shutdown(cause);</span>
+<span class="fc" id="L261">            }</span>
+        }
+<span class="fc" id="L263">    }</span>
+
+    void remotelyClosed(Exception cause) {
+        try {
+<span class="fc" id="L267">            shutdown(cause);</span>
+<span class="nc" id="L268">        } catch (Throwable error) {</span>
+<span class="nc" id="L269">            LOG.trace(&quot;Ignoring exception thrown during cleanup of remotely closed session&quot;, error);</span>
+<span class="fc" id="L270">        }</span>
+<span class="fc" id="L271">    }</span>
+
+    /*
+     * Called to indicate that a session resource was closed by the remote peer.
+     */
+    void resourceRemotelyClosed(JmsResource resource, Exception cause) {
+<span class="fc" id="L277">        LOG.info(&quot;A JMS resource has been remotely closed: {}&quot;, resource);</span>
+
+<span class="fc bfc" id="L279" title="All 2 branches covered.">        if (resource instanceof JmsConsumerInfo) {</span>
+            try {
+<span class="fc" id="L281">                JmsMessageConsumer consumer = consumers.get(((JmsConsumerInfo) resource).getConsumerId());</span>
+<span class="pc bpc" id="L282" title="1 of 2 branches missed.">                if (consumer != null) {</span>
+<span class="fc" id="L283">                    consumer.shutdown(cause);</span>
+                }
+<span class="nc" id="L285">            } catch (Throwable error) {</span>
+<span class="nc" id="L286">                LOG.trace(&quot;Ignoring exception thrown during cleanup of remotely closed consumer&quot;, error);</span>
+<span class="pc" id="L287">            }</span>
+<span class="pc bpc" id="L288" title="1 of 2 branches missed.">        } else if (resource instanceof JmsProducerInfo) {</span>
+            try {
+<span class="fc" id="L290">                JmsMessageProducer producer = producers.get(((JmsProducerInfo) resource).getProducerId());</span>
+<span class="pc bpc" id="L291" title="1 of 2 branches missed.">                if (producer != null) {</span>
+<span class="fc" id="L292">                    producer.shutdown(cause);</span>
+                }
+<span class="nc" id="L294">            } catch (Throwable error) {</span>
+<span class="nc" id="L295">                LOG.trace(&quot;Ignoring exception thrown during cleanup of remotely closed producer&quot;, error);</span>
+<span class="fc" id="L296">            }</span>
+        }
+<span class="fc" id="L298">    }</span>
+
+    //////////////////////////////////////////////////////////////////////////
+    // Consumer creation
+    //////////////////////////////////////////////////////////////////////////
+
+    /**
+     * @param destination
+     * @return a MessageConsumer
+     * @throws JMSException
+     * @see javax.jms.Session#createConsumer(javax.jms.Destination)
+     */
+    @Override
+    public MessageConsumer createConsumer(Destination destination) throws JMSException {
+<span class="fc" id="L312">        return createConsumer(destination, null);</span>
+    }
+
+    /**
+     * @param destination
+     * @param messageSelector
+     * @return MessageConsumer
+     * @throws JMSException
+     * @see javax.jms.Session#createConsumer(javax.jms.Destination,
+     *      java.lang.String)
+     */
+    @Override
+    public MessageConsumer createConsumer(Destination destination, String messageSelector) throws JMSException {
+<span class="fc" id="L325">        return createConsumer(destination, messageSelector, false);</span>
+    }
+
+    /**
+     * @param destination
+     * @param messageSelector
+     * @param noLocal
+     * @return the MessageConsumer
+     * @throws JMSException
+     * @see javax.jms.Session#createConsumer(javax.jms.Destination,
+     *      java.lang.String, boolean)
+     */
+    @Override
+    public MessageConsumer createConsumer(Destination destination, String messageSelector, boolean noLocal) throws JMSException {
+<span class="fc" id="L339">        checkClosed();</span>
+<span class="fc" id="L340">        checkDestination(destination);</span>
+<span class="fc" id="L341">        messageSelector = checkSelector(messageSelector);</span>
+<span class="fc" id="L342">        JmsDestination dest = JmsMessageTransformation.transformDestination(connection, destination);</span>
+<span class="fc" id="L343">        JmsMessageConsumer result = new JmsMessageConsumer(getNextConsumerId(), this, dest, messageSelector, noLocal);</span>
+<span class="fc" id="L344">        result.init();</span>
+<span class="fc" id="L345">        return result;</span>
+    }
+
+    /**
+     * @param queue
+     * @return QueueRecevier
+     * @throws JMSException
+     * @see javax.jms.QueueSession#createReceiver(javax.jms.Queue)
+     */
+    @Override
+    public QueueReceiver createReceiver(Queue queue) throws JMSException {
+<span class="fc" id="L356">        checkClosed();</span>
+<span class="fc" id="L357">        checkDestination(queue);</span>
+<span class="fc" id="L358">        JmsDestination dest = JmsMessageTransformation.transformDestination(connection, queue);</span>
+<span class="fc" id="L359">        JmsQueueReceiver result = new JmsQueueReceiver(getNextConsumerId(), this, dest, null);</span>
+<span class="fc" id="L360">        result.init();</span>
+<span class="fc" id="L361">        return result;</span>
+    }
+
+    /**
+     * @param queue
+     * @param messageSelector
+     * @return QueueReceiver
+     * @throws JMSException
+     * @see javax.jms.QueueSession#createReceiver(javax.jms.Queue,
+     *      java.lang.String)
+     */
+    @Override
+    public QueueReceiver createReceiver(Queue queue, String messageSelector) throws JMSException {
+<span class="fc" id="L374">        checkClosed();</span>
+<span class="fc" id="L375">        checkDestination(queue);</span>
+<span class="fc" id="L376">        messageSelector = checkSelector(messageSelector);</span>
+<span class="fc" id="L377">        JmsDestination dest = JmsMessageTransformation.transformDestination(connection, queue);</span>
+<span class="fc" id="L378">        JmsQueueReceiver result = new JmsQueueReceiver(getNextConsumerId(), this, dest, messageSelector);</span>
+<span class="fc" id="L379">        result.init();</span>
+<span class="fc" id="L380">        return result;</span>
+    }
+
+    /**
+     * @param destination
+     * @return QueueBrowser
+     * @throws JMSException
+     * @see javax.jms.Session#createBrowser(javax.jms.Queue)
+     */
+    @Override
+    public QueueBrowser createBrowser(Queue destination) throws JMSException {
+<span class="fc" id="L391">        return createBrowser(destination, null);</span>
+    }
+
+    /**
+     * @param destination
+     * @param messageSelector
+     * @return QueueBrowser
+     * @throws JMSException
+     * @see javax.jms.Session#createBrowser(javax.jms.Queue, java.lang.String)
+     */
+    @Override
+    public QueueBrowser createBrowser(Queue destination, String messageSelector) throws JMSException {
+<span class="fc" id="L403">        checkClosed();</span>
+<span class="fc" id="L404">        checkDestination(destination);</span>
+<span class="fc" id="L405">        messageSelector = checkSelector(messageSelector);</span>
+<span class="fc" id="L406">        JmsDestination dest = JmsMessageTransformation.transformDestination(connection, destination);</span>
+<span class="fc" id="L407">        JmsQueueBrowser result = new JmsQueueBrowser(this, dest, messageSelector);</span>
+<span class="fc" id="L408">        return result;</span>
+    }
+
+    /**
+     * @param topic
+     * @return TopicSubscriber
+     * @throws JMSException
+     * @see javax.jms.TopicSession#createSubscriber(javax.jms.Topic)
+     */
+    @Override
+    public TopicSubscriber createSubscriber(Topic topic) throws JMSException {
+<span class="fc" id="L419">        return createSubscriber(topic, null, false);</span>
+    }
+
+    /**
+     * @param topic
+     * @param messageSelector
+     * @param noLocal
+     * @return TopicSubscriber
+     * @throws JMSException
+     * @see javax.jms.TopicSession#createSubscriber(javax.jms.Topic,
+     *      java.lang.String, boolean)
+     */
+    @Override
+    public TopicSubscriber createSubscriber(Topic topic, String messageSelector, boolean noLocal) throws JMSException {
+<span class="fc" id="L433">        checkClosed();</span>
+<span class="fc" id="L434">        checkDestination(topic);</span>
+<span class="fc" id="L435">        messageSelector = checkSelector(messageSelector);</span>
+<span class="fc" id="L436">        JmsDestination dest = JmsMessageTransformation.transformDestination(connection, topic);</span>
+<span class="fc" id="L437">        JmsTopicSubscriber result = new JmsTopicSubscriber(getNextConsumerId(), this, dest, noLocal, messageSelector);</span>
+<span class="fc" id="L438">        result.init();</span>
+<span class="fc" id="L439">        return result;</span>
+    }
+
+    /**
+     * @param topic
+     * @param name
+     * @return a TopicSubscriber
+     * @throws JMSException
+     * @see javax.jms.Session#createDurableSubscriber(javax.jms.Topic,
+     *      java.lang.String)
+     */
+    @Override
+    public TopicSubscriber createDurableSubscriber(Topic topic, String name) throws JMSException {
+<span class="fc" id="L452">        return createDurableSubscriber(topic, name, null, false);</span>
+    }
+
+    /**
+     * @param topic
+     * @param name
+     * @param messageSelector
+     * @param noLocal
+     * @return TopicSubscriber
+     * @throws JMSException
+     * @see javax.jms.Session#createDurableSubscriber(javax.jms.Topic,
+     *      java.lang.String, java.lang.String, boolean)
+     */
+    @Override
+    public TopicSubscriber createDurableSubscriber(Topic topic, String name, String messageSelector, boolean noLocal) throws JMSException {
+<span class="fc" id="L467">        checkClosed();</span>
+<span class="fc" id="L468">        checkDestination(topic);</span>
+<span class="fc" id="L469">        checkClientIDWasSetExplicitly();</span>
+<span class="fc" id="L470">        messageSelector = checkSelector(messageSelector);</span>
+<span class="fc" id="L471">        JmsDestination dest = JmsMessageTransformation.transformDestination(connection, topic);</span>
+<span class="fc" id="L472">        JmsTopicSubscriber result = new JmsDurableTopicSubscriber(getNextConsumerId(), this, dest, name, noLocal, messageSelector);</span>
+<span class="fc" id="L473">        result.init();</span>
+<span class="fc" id="L474">        return result;</span>
+    }
+
+    protected void checkClientIDWasSetExplicitly() throws IllegalStateException {
+<span class="fc bfc" id="L478" title="All 2 branches covered.">        if (!connection.isExplicitClientID()) {</span>
+<span class="fc" id="L479">            throw new IllegalStateException(&quot;You must specify a unique clientID for the Connection to use a DurableSubscriber&quot;);</span>
+        }
+<span class="fc" id="L481">    }</span>
+
+    /**
+     * @param name
+     * @throws JMSException
+     * @see javax.jms.Session#unsubscribe(java.lang.String)
+     */
+    @Override
+    public void unsubscribe(String name) throws JMSException {
+<span class="fc" id="L490">        checkClosed();</span>
+<span class="fc" id="L491">        connection.unsubscribe(name);</span>
+<span class="fc" id="L492">    }</span>
+
+    //////////////////////////////////////////////////////////////////////////
+    // Producer creation
+    //////////////////////////////////////////////////////////////////////////
+
+    /**
+     * @param destination
+     * @return MessageProducer
+     * @throws JMSException
+     * @see javax.jms.Session#createProducer(javax.jms.Destination)
+     */
+    @Override
+    public MessageProducer createProducer(Destination destination) throws JMSException {
+<span class="fc" id="L506">        checkClosed();</span>
+<span class="fc" id="L507">        JmsDestination dest = JmsMessageTransformation.transformDestination(connection, destination);</span>
+<span class="fc" id="L508">        JmsMessageProducer result = new JmsMessageProducer(getNextProducerId(), this, dest);</span>
+<span class="fc" id="L509">        add(result);</span>
+<span class="fc" id="L510">        return result;</span>
+    }
+
+    /**
+     * @param queue
+     * @return QueueSender
+     * @throws JMSException
+     * @see javax.jms.QueueSession#createSender(javax.jms.Queue)
+     */
+    @Override
+    public QueueSender createSender(Queue queue) throws JMSException {
+<span class="fc" id="L521">        checkClosed();</span>
+<span class="fc" id="L522">        JmsDestination dest = JmsMessageTransformation.transformDestination(connection, queue);</span>
+<span class="fc" id="L523">        JmsQueueSender result = new JmsQueueSender(getNextProducerId(), this, dest);</span>
+<span class="fc" id="L524">        add(result);</span>
+<span class="fc" id="L525">        return result;</span>
+    }
+
+    /**
+     * @param topic
+     * @return TopicPublisher
+     * @throws JMSException
+     * @see javax.jms.TopicSession#createPublisher(javax.jms.Topic)
+     */
+    @Override
+    public TopicPublisher createPublisher(Topic topic) throws JMSException {
+<span class="fc" id="L536">        checkClosed();</span>
+<span class="fc" id="L537">        JmsDestination dest = JmsMessageTransformation.transformDestination(connection, topic);</span>
+<span class="fc" id="L538">        JmsTopicPublisher result = new JmsTopicPublisher(getNextProducerId(), this, dest);</span>
+<span class="fc" id="L539">        add(result);</span>
+<span class="fc" id="L540">        return result;</span>
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Message creation
+    //////////////////////////////////////////////////////////////////////////
+
+    @Override
+    public BytesMessage createBytesMessage() throws JMSException {
+<span class="fc" id="L549">        checkClosed();</span>
+<span class="fc" id="L550">        return init(connection.getMessageFactory().createBytesMessage());</span>
+    }
+
+    @Override
+    public MapMessage createMapMessage() throws JMSException {
+<span class="fc" id="L555">        checkClosed();</span>
+<span class="fc" id="L556">        return init(connection.getMessageFactory().createMapMessage());</span>
+    }
+
+    @Override
+    public Message createMessage() throws JMSException {
+<span class="fc" id="L561">        checkClosed();</span>
+<span class="fc" id="L562">        return init(connection.getMessageFactory().createMessage());</span>
+    }
+
+    @Override
+    public ObjectMessage createObjectMessage() throws JMSException {
+<span class="fc" id="L567">        checkClosed();</span>
+<span class="fc" id="L568">        return init(connection.getMessageFactory().createObjectMessage(null));</span>
+    }
+
+    @Override
+    public ObjectMessage createObjectMessage(Serializable object) throws JMSException {
+<span class="fc" id="L573">        checkClosed();</span>
+<span class="fc" id="L574">        return init(connection.getMessageFactory().createObjectMessage(object));</span>
+    }
+
+    @Override
+    public StreamMessage createStreamMessage() throws JMSException {
+<span class="fc" id="L579">        checkClosed();</span>
+<span class="fc" id="L580">        return init(connection.getMessageFactory().createStreamMessage());</span>
+    }
+
+    @Override
+    public TextMessage createTextMessage() throws JMSException {
+<span class="fc" id="L585">        checkClosed();</span>
+<span class="fc" id="L586">        return init(connection.getMessageFactory().createTextMessage(null));</span>
+    }
+
+    @Override
+    public TextMessage createTextMessage(String text) throws JMSException {
+<span class="fc" id="L591">        checkClosed();</span>
+<span class="fc" id="L592">        return init(connection.getMessageFactory().createTextMessage(text));</span>
+    }
+
+    //////////////////////////////////////////////////////////////////////////
+    // Destination creation
+    //////////////////////////////////////////////////////////////////////////
+
+    /**
+     * @param queueName
+     * @return Queue
+     * @throws JMSException
+     * @see javax.jms.Session#createQueue(java.lang.String)
+     */
+    @Override
+    public Queue createQueue(String queueName) throws JMSException {
+<span class="fc" id="L607">        checkClosed();</span>
+<span class="fc" id="L608">        return new JmsQueue(queueName);</span>
+    }
+
+    /**
+     * @param topicName
+     * @return Topic
+     * @throws JMSException
+     * @see javax.jms.Session#createTopic(java.lang.String)
+     */
+    @Override
+    public Topic createTopic(String topicName) throws JMSException {
+<span class="fc" id="L619">        checkClosed();</span>
+<span class="fc" id="L620">        return new JmsTopic(topicName);</span>
+    }
+
+    /**
+     * @return TemporaryQueue
+     * @throws JMSException
+     * @see javax.jms.Session#createTemporaryQueue()
+     */
+    @Override
+    public TemporaryQueue createTemporaryQueue() throws JMSException {
+<span class="fc" id="L630">        checkClosed();</span>
+<span class="fc" id="L631">        return connection.createTemporaryQueue();</span>
+    }
+
+    /**
+     * @return TemporaryTopic
+     * @throws JMSException
+     * @see javax.jms.Session#createTemporaryTopic()
+     */
+    @Override
+    public TemporaryTopic createTemporaryTopic() throws JMSException {
+<span class="fc" id="L641">        checkClosed();</span>
+<span class="fc" id="L642">        return connection.createTemporaryTopic();</span>
+    }
+
+    //----- Session Implementation methods -----------------------------------//
+
+    protected void add(JmsMessageConsumer consumer) throws JMSException {
+<span class="fc" id="L648">        consumers.put(consumer.getConsumerId(), consumer);</span>
+<span class="fc" id="L649">        connection.addDispatcher(consumer.getConsumerId(), this);</span>
+
+<span class="fc bfc" id="L651" title="All 2 branches covered.">        if (started.get()) {</span>
+<span class="fc" id="L652">            consumer.start();</span>
+        }
+<span class="fc" id="L654">    }</span>
+
+    protected void remove(JmsMessageConsumer consumer) throws JMSException {
+<span class="fc" id="L657">        connection.removeDispatcher(consumer.getConsumerId());</span>
+<span class="fc" id="L658">        consumers.remove(consumer.getConsumerId());</span>
+<span class="fc" id="L659">    }</span>
+
+    protected void add(JmsMessageProducer producer) {
+<span class="fc" id="L662">        producers.put(producer.getProducerId(), producer);</span>
+<span class="fc" id="L663">    }</span>
+
+    protected void remove(JmsMessageProducer producer) {
+<span class="fc" id="L666">        producers.remove(producer.getProducerId());</span>
+<span class="fc" id="L667">    }</span>
+
+    protected void onException(Exception ex) {
+<span class="nc" id="L670">        connection.onException(ex);</span>
+<span class="nc" id="L671">    }</span>
+
+    protected void onException(JMSException ex) {
+<span class="nc" id="L674">        connection.onException(ex);</span>
+<span class="nc" id="L675">    }</span>
+
+    protected void send(JmsMessageProducer producer, Destination dest, Message msg, int deliveryMode, int priority, long timeToLive, boolean disableMsgId, boolean disableTimestamp) throws JMSException {
+<span class="fc" id="L678">        JmsDestination destination = JmsMessageTransformation.transformDestination(connection, dest);</span>
+
+<span class="pc bpc" id="L680" title="1 of 4 branches missed.">        if(destination.isTemporary() &amp;&amp; ((JmsTemporaryDestination) destination).isDeleted()) {</span>
+<span class="nc" id="L681">            throw new IllegalStateException(&quot;Temporary destination has been deleted&quot;);</span>
+        }
+
+<span class="fc" id="L684">        send(producer, destination, msg, deliveryMode, priority, timeToLive, disableMsgId, disableTimestamp);</span>
+<span class="fc" id="L685">    }</span>
+
+    private void send(JmsMessageProducer producer, JmsDestination destination, Message original, int deliveryMode, int priority, long timeToLive, boolean disableMsgId, boolean disableTimestamp) throws JMSException {
+<span class="fc" id="L688">        sendLock.lock();</span>
+        try {
+<span class="fc" id="L690">            original.setJMSDeliveryMode(deliveryMode);</span>
+<span class="fc" id="L691">            original.setJMSPriority(priority);</span>
+<span class="fc" id="L692">            original.setJMSRedelivered(false);</span>
+
+<span class="fc" id="L694">            long timeStamp = System.currentTimeMillis();</span>
+<span class="fc bfc" id="L695" title="All 2 branches covered.">            boolean hasTTL = timeToLive &gt; 0;</span>
+
+<span class="fc bfc" id="L697" title="All 2 branches covered.">            if (!disableTimestamp) {</span>
+<span class="fc" id="L698">                original.setJMSTimestamp(timeStamp);</span>
+            } else {
+<span class="fc" id="L700">                original.setJMSTimestamp(0);</span>
+            }
+
+<span class="fc bfc" id="L703" title="All 2 branches covered.">            if (hasTTL) {</span>
+<span class="fc" id="L704">                original.setJMSExpiration(timeStamp + timeToLive);</span>
+            } else {
+<span class="fc" id="L706">                original.setJMSExpiration(0);</span>
+            }
+
+<span class="fc" id="L709">            String msgId = getNextMessageId(producer);</span>
+<span class="fc bfc" id="L710" title="All 2 branches covered.">            if (!disableMsgId) {</span>
+<span class="fc" id="L711">                original.setJMSMessageID(msgId);</span>
+            }
+
+<span class="fc" id="L714">            boolean isJmsMessageType = original instanceof JmsMessage;</span>
+<span class="fc bfc" id="L715" title="All 2 branches covered.">            if (isJmsMessageType) {</span>
+<span class="fc" id="L716">                ((JmsMessage) original).setConnection(connection);</span>
+<span class="fc" id="L717">                original.setJMSDestination(destination);</span>
+            }
+
+<span class="fc" id="L720">            JmsMessage copy = JmsMessageTransformation.transformMessage(connection, original);</span>
+
+            // Ensure original message gets the destination as per spec.
+<span class="fc bfc" id="L723" title="All 2 branches covered.">            if (!isJmsMessageType) {</span>
+<span class="fc" id="L724">                original.setJMSDestination(destination);</span>
+<span class="fc" id="L725">                copy.setJMSDestination(destination);</span>
+            }
+
+            // We always set these on the copy, broker might require them even if client
+            // has asked to not include them.
+<span class="fc" id="L730">            copy.setJMSMessageID(msgId);</span>
+<span class="fc" id="L731">            copy.setJMSTimestamp(timeStamp);</span>
+
+<span class="pc bpc" id="L733" title="3 of 8 branches missed.">            boolean sync = connection.isAlwaysSyncSend() ||</span>
+                           (!connection.isForceAsyncSend() &amp;&amp; deliveryMode == DeliveryMode.PERSISTENT &amp;&amp; !getTransacted());
+
+<span class="fc" id="L736">            copy.onSend(disableMsgId, disableTimestamp, timeToLive);</span>
+<span class="fc" id="L737">            JmsOutboundMessageDispatch envelope = new JmsOutboundMessageDispatch();</span>
+<span class="fc" id="L738">            envelope.setMessage(copy);</span>
+<span class="fc" id="L739">            envelope.setProducerId(producer.getProducerId());</span>
+<span class="fc" id="L740">            envelope.setDestination(destination);</span>
+<span class="fc bfc" id="L741" title="All 2 branches covered.">            envelope.setSendAsync(!sync);</span>
+<span class="fc" id="L742">            envelope.setDispatchId(msgId);</span>
+
+<span class="fc" id="L744">            transactionContext.send(connection, envelope);</span>
+        } finally {
+<span class="pc" id="L746">            sendLock.unlock();</span>
+<span class="fc" id="L747">        }</span>
+<span class="fc" id="L748">    }</span>
+
+    void acknowledge(JmsInboundMessageDispatch envelope, ACK_TYPE ackType) throws JMSException {
+<span class="fc" id="L751">        transactionContext.acknowledge(connection, envelope, ackType);</span>
+<span class="fc" id="L752">    }</span>
+
+    /**
+     * Acknowledge all previously delivered messages in this Session as consumed.  This
+     * method is usually only called when the Session is in the CLIENT_ACKNOWLEDGE mode.
+     *
+     * @throws JMSException if an error occurs while the acknowledge is processed.
+     */
+    void acknowledge(ACK_TYPE ackType) throws JMSException {
+<span class="nc bnc" id="L761" title="All 2 branches missed.">        if (isTransacted()) {</span>
+<span class="nc" id="L762">            throw new IllegalStateException(&quot;Session acknowledge called inside a transacted Session&quot;);</span>
+        }
+
+<span class="nc" id="L765">        this.connection.acknowledge(sessionInfo.getSessionId(), ackType);</span>
+<span class="nc" id="L766">    }</span>
+
+    public boolean isClosed() {
+<span class="nc" id="L769">        return closed.get();</span>
+    }
+
+    /**
+     * Checks whether the session uses transactions.
+     *
+     * @return true - if the session uses transactions.
+     */
+    public boolean isTransacted() {
+<span class="fc bfc" id="L778" title="All 2 branches covered.">        return acknowledgementMode == Session.SESSION_TRANSACTED;</span>
+    }
+
+    /**
+     * Checks whether the session used client acknowledgment.
+     *
+     * @return true - if the session uses client acknowledgment.
+     */
+    public boolean isClientAcknowledge() {
+<span class="fc bfc" id="L787" title="All 2 branches covered.">        return acknowledgementMode == Session.CLIENT_ACKNOWLEDGE;</span>
+    }
+
+    /**
+     * Checks whether the session used auto acknowledgment.
+     *
+     * @return true - if the session uses client acknowledgment.
+     */
+    public boolean isAutoAcknowledge() {
+<span class="fc bfc" id="L796" title="All 2 branches covered.">        return acknowledgementMode == Session.AUTO_ACKNOWLEDGE;</span>
+    }
+
+    /**
+     * Checks whether the session used dup ok acknowledgment.
+     *
+     * @return true - if the session uses client acknowledgment.
+     */
+    public boolean isDupsOkAcknowledge() {
+<span class="fc bfc" id="L805" title="All 2 branches covered.">        return acknowledgementMode == Session.DUPS_OK_ACKNOWLEDGE;</span>
+    }
+
+    protected void checkClosed() throws IllegalStateException {
+<span class="fc bfc" id="L809" title="All 2 branches covered.">        if (closed.get()) {</span>
+<span class="fc" id="L810">            IllegalStateException jmsEx = null;</span>
+
+<span class="fc bfc" id="L812" title="All 2 branches covered.">            if (failureCause == null) {</span>
+<span class="fc" id="L813">                jmsEx = new IllegalStateException(&quot;The Session is closed&quot;);</span>
+            } else {
+<span class="fc" id="L815">                jmsEx = new IllegalStateException(&quot;The Session was closed due to an unrecoverable error.&quot;);</span>
+<span class="fc" id="L816">                jmsEx.initCause(failureCause);</span>
+            }
+
+<span class="fc" id="L819">            throw jmsEx;</span>
+        }
+<span class="fc" id="L821">    }</span>
+
+    static String checkSelector(String selector) throws InvalidSelectorException {
+<span class="fc bfc" id="L824" title="All 2 branches covered.">        if (selector != null) {</span>
+<span class="pc bpc" id="L825" title="1 of 2 branches missed.">            if (selector.trim().length() == 0) {</span>
+<span class="nc" id="L826">                return null;</span>
+            }
+
+            try {
+<span class="fc" id="L830">                SelectorParser.parse(selector);</span>
+<span class="nc" id="L831">            } catch (FilterException e) {</span>
+<span class="nc" id="L832">                throw new InvalidSelectorException(e.getMessage());</span>
+<span class="fc" id="L833">            }</span>
+        }
+<span class="fc" id="L835">        return selector;</span>
+    }
+
+    public static void checkDestination(Destination dest) throws InvalidDestinationException {
+<span class="pc bpc" id="L839" title="1 of 2 branches missed.">        if (dest == null) {</span>
+<span class="nc" id="L840">            throw new InvalidDestinationException(&quot;Destination cannot be null&quot;);</span>
+        }
+<span class="fc" id="L842">    }</span>
+
+    protected void start() throws JMSException {
+<span class="pc bpc" id="L845" title="1 of 2 branches missed.">        if (started.compareAndSet(false, true)) {</span>
+<span class="fc" id="L846">            JmsInboundMessageDispatch message = null;</span>
+<span class="pc bpc" id="L847" title="1 of 2 branches missed.">            while ((message = this.stoppedMessages.poll()) != null) {</span>
+<span class="nc" id="L848">                deliver(message);</span>
+            }
+<span class="fc bfc" id="L850" title="All 2 branches covered.">            for (JmsMessageConsumer consumer : consumers.values()) {</span>
+<span class="fc" id="L851">                consumer.start();</span>
+<span class="fc" id="L852">            }</span>
+        }
+<span class="fc" id="L854">    }</span>
+
+    protected void stop() throws JMSException {
+<span class="fc" id="L857">        started.set(false);</span>
+
+<span class="fc bfc" id="L859" title="All 2 branches covered.">        for (JmsMessageConsumer consumer : consumers.values()) {</span>
+<span class="fc" id="L860">            consumer.stop();</span>
+<span class="fc" id="L861">        }</span>
+
+<span class="pc bpc" id="L863" title="1 of 2 branches missed.">        if (executor != null) {</span>
+<span class="nc" id="L864">            executor.shutdown();</span>
+<span class="nc" id="L865">            executor = null;</span>
+        }
+<span class="fc" id="L867">    }</span>
+
+    protected boolean isStarted() {
+<span class="nc" id="L870">        return started.get();</span>
+    }
+
+    public JmsConnection getConnection() {
+<span class="fc" id="L874">        return connection;</span>
+    }
+
+    Executor getExecutor() {
+<span class="nc bnc" id="L878" title="All 2 branches missed.">        if (executor == null) {</span>
+<span class="nc" id="L879">            executor = Executors.newSingleThreadExecutor(new ThreadFactory() {</span>
+
+                @Override
+                public Thread newThread(Runnable runner) {
+<span class="nc" id="L883">                    Thread executor = new Thread(runner);</span>
+<span class="nc" id="L884">                    executor.setName(&quot;JmsSession [&quot;+ sessionInfo.getSessionId() + &quot;] dispatcher&quot;);</span>
+<span class="nc" id="L885">                    executor.setDaemon(true);</span>
+<span class="nc" id="L886">                    return executor;</span>
+                }
+            });
+        }
+<span class="nc" id="L890">        return executor;</span>
+    }
+
+    protected JmsSessionInfo getSessionInfo() {
+<span class="fc" id="L894">        return sessionInfo;</span>
+    }
+
+    protected JmsSessionId getSessionId() {
+<span class="fc" id="L898">        return sessionInfo.getSessionId();</span>
+    }
+
+    protected JmsConsumerId getNextConsumerId() {
+<span class="fc" id="L902">        return new JmsConsumerId(sessionInfo.getSessionId(), consumerIdGenerator.incrementAndGet());</span>
+    }
+
+    protected JmsProducerId getNextProducerId() {
+<span class="fc" id="L906">        return new JmsProducerId(sessionInfo.getSessionId(), producerIdGenerator.incrementAndGet());</span>
+    }
+
+    protected void setFailureCause(Exception failureCause) {
+<span class="nc" id="L910">        this.failureCause = failureCause;</span>
+<span class="nc" id="L911">    }</span>
+
+    private String getNextMessageId(JmsMessageProducer producer) {
+<span class="fc" id="L914">        return producer.getProducerId().toString() + &quot;-&quot; + producer.getNextMessageSequence();</span>
+    }
+
+    private &lt;T extends JmsMessage&gt; T init(T message) {
+<span class="fc" id="L918">        message.setConnection(connection);</span>
+<span class="fc" id="L919">        return message;</span>
+    }
+
+    boolean isDestinationInUse(JmsDestination destination) {
+<span class="pc bpc" id="L923" title="1 of 2 branches missed.">        for (JmsMessageConsumer consumer : consumers.values()) {</span>
+<span class="nc bnc" id="L924" title="All 2 branches missed.">            if (consumer.isUsingDestination(destination)) {</span>
+<span class="nc" id="L925">                return true;</span>
+            }
+<span class="nc" id="L927">        }</span>
+<span class="fc" id="L928">        return false;</span>
+    }
+
+    void checkMessageListener() throws JMSException {
+<span class="pc bpc" id="L932" title="1 of 2 branches missed.">        if (messageListener != null) {</span>
+<span class="nc" id="L933">            throw new IllegalStateException(&quot;Cannot synchronously receive a message when a MessageListener is set&quot;);</span>
+        }
+<span class="fc bfc" id="L935" title="All 2 branches covered.">        for (JmsMessageConsumer consumer : consumers.values()) {</span>
+<span class="pc bpc" id="L936" title="1 of 2 branches missed.">            if (consumer.hasMessageListener()) {</span>
+<span class="nc" id="L937">                throw new IllegalStateException(&quot;Cannot synchronously receive a message when a MessageListener is set&quot;);</span>
+            }
+<span class="fc" id="L939">        }</span>
+<span class="fc" id="L940">    }</span>
+
+    public JmsPrefetchPolicy getPrefetchPolicy() {
+<span class="nc" id="L943">        return prefetchPolicy;</span>
+    }
+
+    public void setPrefetchPolicy(JmsPrefetchPolicy prefetchPolicy) {
+<span class="nc" id="L947">        this.prefetchPolicy = prefetchPolicy;</span>
+<span class="nc" id="L948">    }</span>
+
+    @Override
+    public void onInboundMessage(JmsInboundMessageDispatch envelope) {
+<span class="pc bpc" id="L952" title="1 of 2 branches missed.">        if (started.get()) {</span>
+<span class="fc" id="L953">            deliver(envelope);</span>
+        } else {
+<span class="nc" id="L955">            stoppedMessages.add(envelope);</span>
+        }
+<span class="fc" id="L957">    }</span>
+
+    protected void onConnectionInterrupted() {
+
+<span class="fc" id="L961">        transactionContext.onConnectionInterrupted();</span>
+
+<span class="fc bfc" id="L963" title="All 2 branches covered.">        for (JmsMessageProducer producer : producers.values()) {</span>
+<span class="fc" id="L964">            producer.onConnectionInterrupted();</span>
+<span class="fc" id="L965">        }</span>
+
+<span class="fc bfc" id="L967" title="All 2 branches covered.">        for (JmsMessageConsumer consumer : consumers.values()) {</span>
+<span class="fc" id="L968">            consumer.onConnectionInterrupted();</span>
+<span class="fc" id="L969">        }</span>
+<span class="fc" id="L970">    }</span>
+
+    protected void onConnectionRecovery(Provider provider) throws Exception {
+
+<span class="fc" id="L974">        ProviderFuture request = new ProviderFuture();</span>
+<span class="fc" id="L975">        provider.create(sessionInfo, request);</span>
+<span class="fc" id="L976">        request.sync();</span>
+
+<span class="fc" id="L978">        transactionContext.onConnectionRecovery(provider);</span>
+
+<span class="pc bpc" id="L980" title="1 of 2 branches missed.">        for (JmsMessageProducer producer : producers.values()) {</span>
+<span class="nc" id="L981">            producer.onConnectionRecovery(provider);</span>
+<span class="nc" id="L982">        }</span>
+
+<span class="pc bpc" id="L984" title="1 of 2 branches missed.">        for (JmsMessageConsumer consumer : consumers.values()) {</span>
+<span class="nc" id="L985">            consumer.onConnectionRecovery(provider);</span>
+<span class="nc" id="L986">        }</span>
+<span class="fc" id="L987">    }</span>
+
+    protected void onConnectionRecovered(Provider provider) throws Exception {
+<span class="pc bpc" id="L990" title="1 of 2 branches missed.">        for (JmsMessageProducer producer : producers.values()) {</span>
+<span class="nc" id="L991">            producer.onConnectionRecovered(provider);</span>
+<span class="nc" id="L992">        }</span>
+
+<span class="pc bpc" id="L994" title="1 of 2 branches missed.">        for (JmsMessageConsumer consumer : consumers.values()) {</span>
+<span class="nc" id="L995">            consumer.onConnectionRecovered(provider);</span>
+<span class="nc" id="L996">        }</span>
+<span class="fc" id="L997">    }</span>
+
+    protected void onConnectionRestored() {
+<span class="pc bpc" id="L1000" title="1 of 2 branches missed.">        for (JmsMessageProducer producer : producers.values()) {</span>
+<span class="nc" id="L1001">            producer.onConnectionRestored();</span>
+<span class="nc" id="L1002">        }</span>
+
+<span class="pc bpc" id="L1004" title="1 of 2 branches missed.">        for (JmsMessageConsumer consumer : consumers.values()) {</span>
+<span class="nc" id="L1005">            consumer.onConnectionRestored();</span>
+<span class="nc" id="L1006">        }</span>
+<span class="fc" id="L1007">    }</span>
+
+    private void deliver(JmsInboundMessageDispatch envelope) {
+<span class="fc" id="L1010">        JmsConsumerId id = envelope.getConsumerId();</span>
+<span class="pc bpc" id="L1011" title="1 of 2 branches missed.">        if (id == null) {</span>
+<span class="nc" id="L1012">            this.connection.onException(new JMSException(&quot;No ConsumerId set for &quot; + envelope.getMessage()));</span>
+        }
+<span class="pc bpc" id="L1014" title="1 of 2 branches missed.">        if (messageListener != null) {</span>
+<span class="nc" id="L1015">            messageListener.onMessage(envelope.getMessage());</span>
+        } else {
+<span class="fc" id="L1017">            JmsMessageConsumer consumer = consumers.get(id);</span>
+<span class="pc bpc" id="L1018" title="1 of 2 branches missed.">            if (consumer != null) {</span>
+<span class="fc" id="L1019">                consumer.onInboundMessage(envelope);</span>
+            }
+        }
+<span class="fc" id="L1022">    }</span>
+
+    /**
+     * Sets the transaction context of the session.
+     *
+     * @param transactionContext
+     *        provides the means to control a JMS transaction.
+     */
+    public void setTransactionContext(JmsTransactionContext transactionContext) {
+<span class="fc" id="L1031">        this.transactionContext = transactionContext;</span>
+<span class="fc" id="L1032">    }</span>
+
+    /**
+     * Returns the transaction context of the session.
+     *
+     * @return transactionContext
+     *         session's transaction context.
+     */
+    public JmsTransactionContext getTransactionContext() {
+<span class="fc" id="L1041">        return transactionContext;</span>
+    }
+
+    boolean isSessionRecovered() {
+<span class="nc" id="L1045">        return sessionRecovered;</span>
+    }
+
+    void clearSessionRecovered() {
+<span class="nc" id="L1049">        sessionRecovered = false;</span>
+<span class="nc" id="L1050">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

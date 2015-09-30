@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>JmsConnectionMetaData.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms</a> &gt; <span class="el_source">JmsConnectionMetaData.java</span></div><h1>JmsConnectionMetaData.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms;
+
+import java.util.Enumeration;
+import java.util.Vector;
+
+import javax.jms.ConnectionMetaData;
+
+import org.apache.qpid.jms.util.MetaDataSupport;
+
+/**
+ * A &lt;CODE&gt;ConnectionMetaData&lt;/CODE&gt; object provides information describing
+ * the &lt;CODE&gt;Connection&lt;/CODE&gt; object.
+ */
+public final class JmsConnectionMetaData implements ConnectionMetaData {
+
+<span class="fc" id="L32">    public static final JmsConnectionMetaData INSTANCE = new JmsConnectionMetaData();</span>
+
+<span class="fc" id="L34">    private JmsConnectionMetaData() {}</span>
+
+    /**
+     * Gets the JMS API version.
+     *
+     * @return the JMS API version
+     */
+    @Override
+    public String getJMSVersion() {
+<span class="nc" id="L43">        return &quot;1.1&quot;;</span>
+    }
+
+    /**
+     * Gets the JMS major version number.
+     *
+     * @return the JMS API major version number
+     */
+    @Override
+    public int getJMSMajorVersion() {
+<span class="nc" id="L53">        return 1;</span>
+    }
+
+    /**
+     * Gets the JMS minor version number.
+     *
+     * @return the JMS API minor version number
+     */
+    @Override
+    public int getJMSMinorVersion() {
+<span class="nc" id="L63">        return 1;</span>
+    }
+
+    /**
+     * Gets the JMS provider name.
+     *
+     * @return the JMS provider name
+     */
+    @Override
+    public String getJMSProviderName() {
+<span class="nc" id="L73">        return MetaDataSupport.PROVIDER_NAME;</span>
+    }
+
+    /**
+     * Gets the JMS provider version.
+     *
+     * @return the JMS provider version
+     */
+    @Override
+    public String getProviderVersion() {
+<span class="nc" id="L83">        return MetaDataSupport.PROVIDER_VERSION;</span>
+    }
+
+    /**
+     * Gets the JMS provider major version number.
+     *
+     * @return the JMS provider major version number
+     */
+    @Override
+    public int getProviderMajorVersion() {
+<span class="fc" id="L93">        return MetaDataSupport.PROVIDER_MAJOR_VERSION;</span>
+    }
+
+    /**
+     * Gets the JMS provider minor version number.
+     *
+     * @return the JMS provider minor version number
+     */
+    @Override
+    public int getProviderMinorVersion() {
+<span class="fc" id="L103">        return MetaDataSupport.PROVIDER_MINOR_VERSION;</span>
+    }
+
+    /**
+     * Gets an enumeration of the JMSX property names.
+     *
+     * @return an Enumeration of JMSX property names
+     */
+    @Override
+    public Enumeration&lt;String&gt; getJMSXPropertyNames() {
+<span class="nc" id="L113">        Vector&lt;String&gt; jmxProperties = new Vector&lt;String&gt;();</span>
+<span class="nc" id="L114">        jmxProperties.add(&quot;JMSXUserID&quot;);</span>
+<span class="nc" id="L115">        jmxProperties.add(&quot;JMSXGroupID&quot;);</span>
+<span class="nc" id="L116">        jmxProperties.add(&quot;JMSXGroupSeq&quot;);</span>
+<span class="nc" id="L117">        jmxProperties.add(&quot;JMSXDeliveryCount&quot;);</span>
+<span class="nc" id="L118">        return jmxProperties.elements();</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>JmsOutboundMessageDispatch.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.message</a> &gt; <span class="el_source">JmsOutboundMessageDispatch.java</span></div><h1>JmsOutboundMessageDispatch.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.message;
+
+import org.apache.qpid.jms.JmsDestination;
+import org.apache.qpid.jms.meta.JmsProducerId;
+
+/**
+ * Envelope that wraps the objects involved in a Message send operation.
+ */
+<span class="fc" id="L25">public class JmsOutboundMessageDispatch {</span>
+
+    private JmsProducerId producerId;
+    private JmsMessage message;
+    private JmsDestination destination;
+    private boolean sendAsync;
+    private String dispatchId;
+
+    public JmsDestination getDestination() {
+<span class="fc" id="L34">        return destination;</span>
+    }
+
+    public void setDestination(JmsDestination destination) {
+<span class="fc" id="L38">        this.destination = destination;</span>
+<span class="fc" id="L39">    }</span>
+
+    public JmsMessage getMessage() {
+<span class="fc" id="L42">        return message;</span>
+    }
+
+    public void setMessage(JmsMessage message) {
+<span class="fc" id="L46">        this.message = message;</span>
+<span class="fc" id="L47">    }</span>
+
+    public JmsProducerId getProducerId() {
+<span class="fc" id="L50">        return producerId;</span>
+    }
+
+    public void setProducerId(JmsProducerId producerId) {
+<span class="fc" id="L54">        this.producerId = producerId;</span>
+<span class="fc" id="L55">    }</span>
+
+    public void setSendAsync(boolean sendAsync) {
+<span class="fc" id="L58">        this.sendAsync = sendAsync;</span>
+<span class="fc" id="L59">    }</span>
+
+    public boolean isSendAsync() {
+<span class="fc" id="L62">        return sendAsync;</span>
+    }
+
+    public String getDispatchId() {
+<span class="fc" id="L66">        return dispatchId;</span>
+    }
+
+    public void setDispatchId(String dispatchId) {
+<span class="fc" id="L70">        this.dispatchId = dispatchId;</span>
+<span class="fc" id="L71">    }</span>
+
+    @Override
+    public String toString() {
+<span class="fc" id="L75">        String result = &quot;JmsOutboundMessageDispatch {dispatchId = &quot;;</span>
+<span class="fc" id="L76">        String id = dispatchId;</span>
+<span class="fc bfc" id="L77" title="All 2 branches covered.">        if (id == null) {</span>
+<span class="fc" id="L78">            result = result + &quot;&lt;null&gt;}&quot;;</span>
+        } else {
+<span class="fc" id="L80">            result = result + id + &quot;}&quot;;</span>
+        }
+
+<span class="fc" id="L83">        return result;</span>
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

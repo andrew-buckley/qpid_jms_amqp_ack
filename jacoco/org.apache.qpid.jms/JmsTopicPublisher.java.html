@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>JmsTopicPublisher.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms</a> &gt; <span class="el_source">JmsTopicPublisher.java</span></div><h1>JmsTopicPublisher.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms;
+
+import javax.jms.IllegalStateException;
+import javax.jms.JMSException;
+import javax.jms.Message;
+import javax.jms.Topic;
+import javax.jms.TopicPublisher;
+
+import org.apache.qpid.jms.meta.JmsProducerId;
+
+/**
+ * Implementation of a TopicPublisher
+ */
+public class JmsTopicPublisher extends JmsMessageProducer implements TopicPublisher {
+
+    /**
+     * Constructor
+     *
+     * @param session
+     * @param destination
+     */
+    protected JmsTopicPublisher(JmsProducerId id, JmsSession session, JmsDestination destination) throws JMSException {
+<span class="fc" id="L39">        super(id, session, destination);</span>
+<span class="fc" id="L40">    }</span>
+
+    /**
+     * @return the Topic
+     * @throws IllegalStateException
+     * @see javax.jms.TopicPublisher#getTopic()
+     */
+    @Override
+    public Topic getTopic() throws IllegalStateException {
+<span class="nc" id="L49">        checkClosed();</span>
+<span class="nc" id="L50">        return (Topic) this.producerInfo.getDestination();</span>
+    }
+
+    /**
+     * @param message
+     * @throws JMSException
+     * @see javax.jms.TopicPublisher#publish(javax.jms.Message)
+     */
+    @Override
+    public void publish(Message message) throws JMSException {
+<span class="nc" id="L60">        super.send(message);</span>
+<span class="nc" id="L61">    }</span>
+
+    /**
+     * @param topic
+     * @param message
+     * @throws JMSException
+     * @see javax.jms.TopicPublisher#publish(javax.jms.Topic, javax.jms.Message)
+     */
+    @Override
+    public void publish(Topic topic, Message message) throws JMSException {
+<span class="nc" id="L71">        super.send(topic, message);</span>
+<span class="nc" id="L72">    }</span>
+
+    /**
+     * @param message
+     * @param deliveryMode
+     * @param priority
+     * @param timeToLive
+     * @throws JMSException
+     * @see javax.jms.TopicPublisher#publish(javax.jms.Message, int, int, long)
+     */
+    @Override
+    public void publish(Message message, int deliveryMode, int priority, long timeToLive) throws JMSException {
+<span class="nc" id="L84">        super.send(message, deliveryMode, priority, timeToLive);</span>
+<span class="nc" id="L85">    }</span>
+
+    /**
+     * @param topic
+     * @param message
+     * @param deliveryMode
+     * @param priority
+     * @param timeToLive
+     * @throws JMSException
+     * @see javax.jms.TopicPublisher#publish(javax.jms.Topic, javax.jms.Message, int, int, long)
+     */
+    @Override
+    public void publish(Topic topic, Message message, int deliveryMode, int priority, long timeToLive) throws JMSException {
+<span class="nc" id="L98">        super.send(topic, message, deliveryMode, priority, timeToLive);</span>
+<span class="nc" id="L99">    }</span>
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

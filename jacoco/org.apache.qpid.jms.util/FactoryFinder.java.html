@@ -1,0 +1,232 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>FactoryFinder.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.util</a> &gt; <span class="el_source">FactoryFinder.java</span></div><h1>FactoryFinder.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.util;
+
+import java.io.BufferedInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * A Factory finding helper class used to locate objects that serve as Factories for
+ * other Object types.  The search an instantiate mechanism is configurable so that
+ * in a non-stand-alone environment such as OSGI the finder and be configured to work.
+ */
+public class FactoryFinder&lt;T extends Object&gt; {
+
+    /**
+     * The strategy that the FactoryFinder uses to find load and instantiate Objects can be
+     * changed out by calling the
+     * {@link org.apache.qpid.jms.util.FactoryFinder#setObjectFactory(org.apache.qpid.jms.util.FactoryFinder.ObjectFactory)}
+     * method with a custom implementation of ObjectFactory.
+     *
+     * The default ObjectFactory is typically changed out when running in a specialized
+     * container environment where service discovery needs to be done via the container system.
+     * For example, in an OSGi scenario.
+     */
+    public interface ObjectFactory {
+
+        /**
+         * Creates the requested factory instance.
+         *
+         * @param path
+         *        the full service path
+         *
+         * @return instance of the factory object being searched for.
+         *
+         * @throws IllegalAccessException if an error occurs while accessing the search path.
+         * @throws InstantiationException if the factory object fails on create.
+         * @throws ResourceNotFoundException if the path does not exist.
+         * @throws IOException if the search encounter an IO error.
+         * @throws ClassNotFoundException if the class that is to be loaded cannot be found.
+         */
+        public Object create(String path) throws IllegalAccessException, InstantiationException, IOException, ClassNotFoundException, ResourceNotFoundException;
+
+    }
+
+<span class="fc" id="L62">    private static ObjectFactory objectFactory = new StandaloneObjectFactory();</span>
+
+<span class="fc" id="L64">    private final ConcurrentHashMap&lt;String, T&gt; cachedFactories = new ConcurrentHashMap&lt;String, T&gt;();</span>
+    private final String path;
+    private final Class&lt;T&gt; factoryType;
+
+    /**
+     * Creates a new instance of the FactoryFinder using the given search path.
+     *
+     * @param path
+     *        The path to use when searching for the factory definitions.
+     */
+<span class="fc" id="L74">    public FactoryFinder(Class&lt;T&gt; factoryType, String path) {</span>
+<span class="fc" id="L75">        this.path = path;</span>
+<span class="fc" id="L76">        this.factoryType = factoryType;</span>
+<span class="fc" id="L77">    }</span>
+
+    /**
+     * @return the currently configured ObjectFactory instance used to locate the Factory objects.
+     */
+    public static ObjectFactory getObjectFactory() {
+<span class="fc" id="L83">        return objectFactory;</span>
+    }
+
+    /**
+     * Sets the ObjectFactory instance to use when searching for the Factory class.  This allows
+     * the default instance to be overridden in an environment where the basic version will not
+     * work.
+     *
+     * @param objectFactory
+     *        the new object factory to use when searching for a Factory instance.
+     */
+    public static void setObjectFactory(ObjectFactory objectFactory) {
+<span class="fc" id="L95">        FactoryFinder.objectFactory = objectFactory;</span>
+<span class="fc" id="L96">    }</span>
+
+    /**
+     * Creates a new instance of the given key.  The method first checks the cache of previously
+     * found factory instances for one that matches the key.  If no cached version exists then
+     * the factory will be searched for using the configured ObjectFactory instance.
+     *
+     * @param key
+     *        is the key to add to the path to find a text file containing the factory name
+     *
+     * @return a newly created instance
+     *
+     * @throws IllegalAccessException if an error occurs while accessing the search path.
+     * @throws InstantiationException if the factory object fails on create.
+     * @throws ResourceNotFoundException if the resource with the given key does not exist.
+     * @throws IOException if the search encounter an IO error.
+     * @throws ClassNotFoundException if the class that is to be loaded cannot be found.
+     * @throws ClassCastException if the found object is not assignable to the request factory type.
+     */
+    public T newInstance(String key) throws IllegalAccessException, InstantiationException, IOException, ClassNotFoundException, ClassCastException, ResourceNotFoundException {
+<span class="fc" id="L116">        T factory = cachedFactories.get(key);</span>
+<span class="fc bfc" id="L117" title="All 2 branches covered.">        if (factory == null) {</span>
+<span class="fc" id="L118">            Object found = objectFactory.create(path + key);</span>
+<span class="pc bpc" id="L119" title="1 of 2 branches missed.">            if (found != null) {</span>
+<span class="pc bpc" id="L120" title="1 of 2 branches missed.">                if (factoryType.isInstance(found)) {</span>
+<span class="fc" id="L121">                    factory = factoryType.cast(found);</span>
+<span class="fc" id="L122">                    cachedFactories.putIfAbsent(key, factory);</span>
+                } else {
+<span class="nc" id="L124">                    throw new ClassCastException(&quot;Cannot cast &quot; + found.getClass().getName() +</span>
+                        &quot; to &quot; + factoryType.getName());
+                }
+            } else {
+<span class="nc" id="L128">                throw new ClassNotFoundException(&quot;Could not locate factory for class: &quot; + key);</span>
+            }
+        }
+
+<span class="fc" id="L132">        return factory;</span>
+    }
+
+    /**
+     * Allow registration of a Provider factory without wiring via META-INF classes
+     *
+     * @param scheme
+     *        The URI scheme value that names the target Provider instance.
+     * @param factory
+     *        The factory to register in this finder.
+     */
+    public void registerProviderFactory(String scheme, T factory) {
+<span class="fc" id="L144">        cachedFactories.put(scheme, factory);</span>
+<span class="fc" id="L145">    }</span>
+
+    /**
+     * The default implementation of Object factory which works well in stand-alone applications.
+     */
+<span class="fc" id="L150">    protected static class StandaloneObjectFactory implements ObjectFactory {</span>
+<span class="fc" id="L151">        final ConcurrentHashMap&lt;String, Class&lt;?&gt;&gt; classMap = new ConcurrentHashMap&lt;String, Class&lt;?&gt;&gt;();</span>
+<span class="fc" id="L152">        final ConcurrentHashMap&lt;String, Properties&gt; propertiesMap = new ConcurrentHashMap&lt;String, Properties&gt;();</span>
+
+        @Override
+        public Object create(final String path) throws InstantiationException, IllegalAccessException, ClassNotFoundException, IOException, ResourceNotFoundException {
+<span class="fc" id="L156">            Class&lt;?&gt; clazz = classMap.get(path);</span>
+<span class="fc" id="L157">            Properties properties = propertiesMap.get(path);</span>
+
+<span class="pc bpc" id="L159" title="1 of 2 branches missed.">            if (clazz == null) {</span>
+<span class="fc" id="L160">                properties = loadProperties(path);</span>
+<span class="fc" id="L161">                clazz = loadClass(properties);</span>
+<span class="fc" id="L162">                Class&lt;?&gt; previousClass = classMap.putIfAbsent(path, clazz);</span>
+<span class="fc" id="L163">                Properties previousProperties = propertiesMap.putIfAbsent(path, properties);</span>
+<span class="pc bpc" id="L164" title="1 of 2 branches missed.">                if (previousClass != null) {</span>
+<span class="nc" id="L165">                    clazz = previousClass;</span>
+                }
+<span class="pc bpc" id="L167" title="1 of 2 branches missed.">                if (previousProperties != null) {</span>
+<span class="nc" id="L168">                    properties = previousProperties;</span>
+                }
+            }
+
+<span class="fc" id="L172">            Object factory = clazz.newInstance();</span>
+
+<span class="pc bpc" id="L174" title="1 of 2 branches missed.">            if (!PropertyUtil.setProperties(factory, properties).isEmpty()) {</span>
+<span class="nc" id="L175">                String msg = &quot;&quot;</span>
+                    + &quot; Not all provider options could be set on the found factory.&quot;
+                    + &quot; Check the options are spelled correctly.&quot;
+                    + &quot; Given parameters=[&quot; + properties + &quot;].&quot;
+                    + &quot; This provider instance cannot be started.&quot;;
+<span class="nc" id="L180">                throw new IllegalArgumentException(msg);</span>
+            }
+
+<span class="fc" id="L183">            return factory;</span>
+        }
+
+        static public Class&lt;?&gt; loadClass(Properties properties) throws ClassNotFoundException, IOException {
+
+<span class="fc" id="L188">            String className = properties.getProperty(&quot;class&quot;);</span>
+<span class="pc bpc" id="L189" title="1 of 2 branches missed.">            if (className == null) {</span>
+<span class="nc" id="L190">                throw new IOException(&quot;Expected property is missing: class&quot;);</span>
+            } else {
+<span class="fc" id="L192">                properties.remove(&quot;class&quot;);</span>
+            }
+<span class="fc" id="L194">            Class&lt;?&gt; clazz = null;</span>
+<span class="fc" id="L195">            ClassLoader loader = Thread.currentThread().getContextClassLoader();</span>
+<span class="pc bpc" id="L196" title="1 of 2 branches missed.">            if (loader != null) {</span>
+                try {
+<span class="fc" id="L198">                    clazz = loader.loadClass(className);</span>
+<span class="nc" id="L199">                } catch (ClassNotFoundException e) {</span>
+<span class="fc" id="L200">                }</span>
+            }
+<span class="pc bpc" id="L202" title="1 of 2 branches missed.">            if (clazz == null) {</span>
+<span class="nc" id="L203">                clazz = FactoryFinder.class.getClassLoader().loadClass(className);</span>
+            }
+
+<span class="fc" id="L206">            return clazz;</span>
+        }
+
+        static public Properties loadProperties(String uri) throws IOException, ResourceNotFoundException {
+            // lets try the thread context class loader first
+<span class="fc" id="L211">            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();</span>
+<span class="pc bpc" id="L212" title="1 of 2 branches missed.">            if (classLoader == null) {</span>
+<span class="nc" id="L213">                classLoader = StandaloneObjectFactory.class.getClassLoader();</span>
+            }
+<span class="fc" id="L215">            InputStream in = classLoader.getResourceAsStream(uri);</span>
+<span class="fc bfc" id="L216" title="All 2 branches covered.">            if (in == null) {</span>
+<span class="fc" id="L217">                in = FactoryFinder.class.getClassLoader().getResourceAsStream(uri);</span>
+<span class="pc bpc" id="L218" title="1 of 2 branches missed.">                if (in == null) {</span>
+<span class="fc" id="L219">                    throw new ResourceNotFoundException(&quot;Could not find factory resource: &quot; + uri);</span>
+                }
+            }
+
+            // lets load the file
+<span class="pc" id="L224">            try (BufferedInputStream reader = new BufferedInputStream(in)) {</span>
+<span class="fc" id="L225">                Properties properties = new Properties();</span>
+<span class="fc" id="L226">                properties.load(reader);</span>
+<span class="fc" id="L227">                return properties;</span>
+<span class="pc bpc" id="L228" title="6 of 8 branches missed.">            }</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>

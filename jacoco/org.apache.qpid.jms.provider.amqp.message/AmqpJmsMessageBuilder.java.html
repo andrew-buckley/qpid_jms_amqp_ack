@@ -1,0 +1,194 @@
+<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd"><html xmlns="http://www.w3.org/1999/xhtml" lang="en"><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"/><link rel="stylesheet" href="../.resources/report.css" type="text/css"/><link rel="shortcut icon" href="../.resources/report.gif" type="image/gif"/><title>AmqpJmsMessageBuilder.java</title><link rel="stylesheet" href="../.resources/prettify.css" type="text/css"/><script type="text/javascript" src="../.resources/prettify.js"></script></head><body onload="window['PR_TAB_WIDTH']=4;prettyPrint()"><div class="breadcrumb" id="breadcrumb"><span class="info"><a href="../.sessions.html" class="el_session">Sessions</a></span><a href="../index.html" class="el_report">QpidJMS Client with AMQP acknowledgement</a> &gt; <a href="index.source.html" class="el_package">org.apache.qpid.jms.provider.amqp.message</a> &gt; <span class="el_source">AmqpJmsMessageBuilder.java</span></div><h1>AmqpJmsMessageBuilder.java</h1><pre class="source lang-java linenums">/**
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the &quot;License&quot;); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an &quot;AS IS&quot; BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+package org.apache.qpid.jms.provider.amqp.message;
+
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_BYTES_MESSAGE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_MAP_MESSAGE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_MESSAGE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_MSG_TYPE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_OBJECT_MESSAGE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_STREAM_MESSAGE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.JMS_TEXT_MESSAGE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.OCTET_STREAM_CONTENT_TYPE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.SERIALIZED_JAVA_OBJECT_CONTENT_TYPE;
+import static org.apache.qpid.jms.provider.amqp.message.AmqpMessageSupport.isContentType;
+
+import java.io.IOException;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+
+import org.apache.qpid.jms.message.JmsBytesMessage;
+import org.apache.qpid.jms.message.JmsMapMessage;
+import org.apache.qpid.jms.message.JmsMessage;
+import org.apache.qpid.jms.message.JmsObjectMessage;
+import org.apache.qpid.jms.message.JmsStreamMessage;
+import org.apache.qpid.jms.message.JmsTextMessage;
+import org.apache.qpid.jms.provider.amqp.AmqpConsumer;
+import org.apache.qpid.jms.util.ContentTypeSupport;
+import org.apache.qpid.jms.util.InvalidContentTypeException;
+import org.apache.qpid.proton.amqp.Binary;
+import org.apache.qpid.proton.amqp.messaging.AmqpSequence;
+import org.apache.qpid.proton.amqp.messaging.AmqpValue;
+import org.apache.qpid.proton.amqp.messaging.Data;
+import org.apache.qpid.proton.amqp.messaging.Section;
+import org.apache.qpid.proton.message.Message;
+
+/**
+ * Builder class used to construct the appropriate JmsMessage / JmsMessageFacade
+ * objects to wrap an incoming AMQP Message.
+ */
+<span class="fc" id="L54">public class AmqpJmsMessageBuilder {</span>
+
+    /**
+     * Create a new JmsMessage and underlying JmsMessageFacade that represents the proper
+     * message type for the incoming AMQP message.
+     *
+     * @param consumer
+     *        The provider AMQP Consumer instance where this message arrived at.
+     * @param message
+     *        The Proton Message object that will be wrapped.
+     *
+     * @return a JmsMessage instance properly configured for dispatch to the provider listener.
+     *
+     * @throws IOException if an error occurs while creating the message objects.
+     */
+    public static JmsMessage createJmsMessage(AmqpConsumer consumer, Message message) throws IOException {
+
+        // First we try the easy way, if the annotation is there we don't have to work hard.
+<span class="fc" id="L72">        JmsMessage result = createFromMsgAnnotation(consumer, message);</span>
+<span class="fc bfc" id="L73" title="All 2 branches covered.">        if (result != null) {</span>
+<span class="fc" id="L74">            return result;</span>
+        }
+
+        // Next, match specific section structures and content types
+<span class="fc" id="L78">        result = createWithoutAnnotation(consumer, message);</span>
+<span class="pc bpc" id="L79" title="1 of 2 branches missed.">        if (result != null) {</span>
+<span class="fc" id="L80">            return result;</span>
+        }
+
+        // TODO
+<span class="nc" id="L84">        throw new IOException(&quot;Could not create a JMS message from incoming message&quot;);</span>
+    }
+
+    private static JmsMessage createFromMsgAnnotation(AmqpConsumer consumer, Message message) throws IOException {
+<span class="fc" id="L88">        Object annotation = AmqpMessageSupport.getMessageAnnotation(JMS_MSG_TYPE, message);</span>
+<span class="fc bfc" id="L89" title="All 2 branches covered.">        if (annotation != null) {</span>
+
+<span class="fc bfc" id="L91" title="All 7 branches covered.">            switch ((byte) annotation) {</span>
+                case JMS_MESSAGE:
+<span class="fc" id="L93">                    return createMessage(consumer, message);</span>
+                case JMS_BYTES_MESSAGE:
+<span class="fc" id="L95">                    return createBytesMessage(consumer, message);</span>
+                case JMS_TEXT_MESSAGE:
+<span class="fc" id="L97">                    return createTextMessage(consumer, message, StandardCharsets.UTF_8);</span>
+                case JMS_MAP_MESSAGE:
+<span class="fc" id="L99">                    return createMapMessage(consumer, message);</span>
+                case JMS_STREAM_MESSAGE:
+<span class="fc" id="L101">                    return createStreamMessage(consumer, message);</span>
+                case JMS_OBJECT_MESSAGE:
+<span class="fc" id="L103">                    return createObjectMessage(consumer, message);</span>
+                default:
+<span class="fc" id="L105">                    throw new IOException(&quot;Invalid JMS Message Type annotation value found in message: &quot; + annotation);</span>
+            }
+        }
+
+<span class="fc" id="L109">        return null;</span>
+    }
+
+    private static JmsMessage createWithoutAnnotation(AmqpConsumer consumer, Message message) {
+<span class="fc" id="L113">        Section body = message.getBody();</span>
+
+<span class="fc bfc" id="L115" title="All 2 branches covered.">        if (body == null) {</span>
+<span class="fc bfc" id="L116" title="All 2 branches covered.">            if (isContentType(SERIALIZED_JAVA_OBJECT_CONTENT_TYPE, message)) {</span>
+<span class="fc" id="L117">                return createObjectMessage(consumer, message);</span>
+<span class="fc bfc" id="L118" title="All 4 branches covered.">            } else if (isContentType(OCTET_STREAM_CONTENT_TYPE, message) || isContentType(null, message)) {</span>
+<span class="fc" id="L119">                return createBytesMessage(consumer, message);</span>
+            } else {
+<span class="fc" id="L121">                Charset charset = getCharsetForTextualContent(message.getContentType());</span>
+<span class="pc bpc" id="L122" title="1 of 2 branches missed.">                if (charset != null) {</span>
+<span class="fc" id="L123">                    return createTextMessage(consumer, message, charset);</span>
+                } else {
+<span class="nc" id="L125">                    return createMessage(consumer, message);</span>
+                }
+            }
+<span class="fc bfc" id="L128" title="All 2 branches covered.">        } else if (body instanceof Data) {</span>
+<span class="fc bfc" id="L129" title="All 4 branches covered.">            if (isContentType(OCTET_STREAM_CONTENT_TYPE, message) || isContentType(null, message)) {</span>
+<span class="fc" id="L130">                return createBytesMessage(consumer, message);</span>
+<span class="fc bfc" id="L131" title="All 2 branches covered.">            } else if (isContentType(SERIALIZED_JAVA_OBJECT_CONTENT_TYPE, message)) {</span>
+<span class="fc" id="L132">                return createObjectMessage(consumer, message);</span>
+            } else {
+<span class="fc" id="L134">                Charset charset = getCharsetForTextualContent(message.getContentType());</span>
+<span class="fc bfc" id="L135" title="All 2 branches covered.">                if (charset != null) {</span>
+<span class="fc" id="L136">                    return createTextMessage(consumer, message, charset);</span>
+                } else {
+<span class="fc" id="L138">                    return createBytesMessage(consumer, message);</span>
+                }
+            }
+<span class="fc bfc" id="L141" title="All 2 branches covered.">        } else if (body instanceof AmqpValue) {</span>
+<span class="fc" id="L142">            Object value = ((AmqpValue) body).getValue();</span>
+
+<span class="fc bfc" id="L144" title="All 4 branches covered.">            if (value == null || value instanceof String) {</span>
+<span class="fc" id="L145">                return createTextMessage(consumer, message, StandardCharsets.UTF_8);</span>
+<span class="fc bfc" id="L146" title="All 2 branches covered.">            } else if (value instanceof Binary) {</span>
+<span class="fc" id="L147">                return createBytesMessage(consumer, message);</span>
+            } else {
+<span class="fc" id="L149">                return createObjectMessage(consumer, message);</span>
+            }
+<span class="pc bpc" id="L151" title="1 of 2 branches missed.">        } else if (body instanceof AmqpSequence) {</span>
+<span class="fc" id="L152">            return createObjectMessage(consumer, message);</span>
+        }
+
+<span class="nc" id="L155">        return null;</span>
+    }
+
+    private static JmsObjectMessage createObjectMessage(AmqpConsumer consumer, Message message) {
+<span class="fc" id="L159">        return new JmsObjectMessage(new AmqpJmsObjectMessageFacade(consumer, message));</span>
+    }
+
+    private static JmsStreamMessage createStreamMessage(AmqpConsumer consumer, Message message) {
+<span class="fc" id="L163">        return new JmsStreamMessage(new AmqpJmsStreamMessageFacade(consumer, message));</span>
+    }
+
+    private static JmsMapMessage createMapMessage(AmqpConsumer consumer, Message message) {
+<span class="fc" id="L167">        return new JmsMapMessage(new AmqpJmsMapMessageFacade(consumer, message));</span>
+    }
+
+    private static JmsTextMessage createTextMessage(AmqpConsumer consumer, Message message, Charset charset) {
+<span class="fc" id="L171">        return new JmsTextMessage(new AmqpJmsTextMessageFacade(consumer, message, charset));</span>
+    }
+
+    private static JmsBytesMessage createBytesMessage(AmqpConsumer consumer, Message message) {
+<span class="fc" id="L175">        return new JmsBytesMessage(new AmqpJmsBytesMessageFacade(consumer, message));</span>
+    }
+
+    private static JmsMessage createMessage(AmqpConsumer consumer, Message message) {
+<span class="fc" id="L179">        return new JmsMessage(new AmqpJmsMessageFacade(consumer, message));</span>
+    }
+
+    /**
+     * @param contentType the contentType of the received message
+     * @return the character set to use, or null if not to treat the message as text
+     */
+    private static Charset getCharsetForTextualContent(String contentType) {
+        try {
+<span class="fc" id="L188">            return ContentTypeSupport.parseContentTypeForTextualCharset(contentType);</span>
+<span class="fc" id="L189">        } catch (InvalidContentTypeException e) {</span>
+<span class="fc" id="L190">            return null;</span>
+        }
+    }
+}
+</pre><div class="footer"><span class="right">Created with <a href="http://www.eclemma.org/jacoco">JaCoCo</a> 0.7.5.201505241946</span></div></body></html>
